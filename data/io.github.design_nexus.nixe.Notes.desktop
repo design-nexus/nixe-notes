@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Notes
+GenericName=Markdown Workspace
+Comment=Write Markdown and browse local knowledge vaults
+Exec=nixe-notes %F
+Icon=io.github.design_nexus.nixe.Notes
+Terminal=false
+Categories=Office;TextEditor;GTK;
+Keywords=markdown;notes;vault;writing;knowledge;obsidian;
+MimeType=text/markdown;text/x-markdown;
+StartupNotify=true
+StartupWMClass=io.github.design_nexus.nixe.Notes
+SingleMainWindow=true
+DBusActivatable=false

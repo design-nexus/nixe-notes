@@ -1,0 +1,26 @@
+# Personal WebDAV synchronization
+
+File → Personal sync configures the active vault. Supply the full HTTPS URL of a **dedicated vault collection**, for example `https://cloud.example/remote.php/dav/files/ken/Notes/`, a username, and a Nextcloud app password. Enable background sync explicitly. For a new collection, “Create remote collection” creates only the final folder; its parent must already exist. No account or remote service is required for local writing.
+
+Passwords use the pinned public `nixe-sync` desktop Secret Service helpers, via `secret-tool` (Arch package `libsecret`). Passwords do not enter preferences, command arguments, or the vault. Each vault/account has its own keyring ID and private sync database. Account removal or disabling does not erase the keyring entry or recovery history. HTTPS certificate validation is mandatory; redirects and environment proxies are disabled. Use the server's canonical collection URL. HTTP is available only inside the local transport test fixture.
+
+Notes synchronizes ordinary visible files: Markdown, JSON Canvas, images, and other attachments. Hidden entries, `.obsidian`, symlinks, and excluded relative folders/files never transfer. Separate exclusions with semicolons, e.g. `Private; Recordings`. This is path-based selection, not a glob syntax. Empty directories are not synchronized. Folder/note renames appear as creates plus reviewed deletions; existing Notes move actions still update links locally.
+
+The remote remains usable by other Markdown clients. No proprietary remote journal or serialized document format is required. The shared `nixe-sync` WebDAV API transfers immutable Nixe operation batches, so Notes uses a small raw-file transport adapter and reuses the shared keyring and exponential retry policy rather than misapplying journal merge rules to Markdown.
+
+## Versions and conflicts
+
+- Each synchronized file has a local baseline digest and strong remote ETag. Unchanged remote versions avoid downloads. A first merge never overwrites a different existing file.
+- Uploads use `If-Match` or create-only `If-None-Match: *`. Downloads are fetched against their listed version, then use a local conditional atomic replacement. New local files use synced staging and no-clobber publication. Incomplete listings and failed authentication never become remote deletions.
+- Both-side edits and **all one-sided deletions** require File → Sync conflicts. Review local → remote text diffs, then Keep local, Use remote, Keep both, or explicitly apply the named deletion. Keep both creates a deterministic remote-version copy beside the local note. Binary/large conflicts show byte sizes instead of pretending to provide a useful text diff.
+- Reviewed local/remote versions are checked again. A changed version stops resolution. There is no last-write-wins strategy. Dirty/conflicted open documents and retained editor recovery drafts defer sync; local edits made during a transfer are also protected by save versioning and the existing external-change UI.
+- Replaced/deleted bytes are retained outside the vault, including binary attachments (50 versions per path). File → Sync recovery versions exports a selected version without replacing an existing destination. Markdown downloads additionally enter normal document history. Sync state and recovery history are durable; deleting them discards baselines and retained revisions.
+- A crash after transfer but before baseline commit recovers by comparing exact content on the next run. Operations are per-file, not a vault-wide distributed transaction. A stopped deletion can retain a hidden `.nixe-sync-*` folder containing the moved file; an error identifies it. Such folders are excluded from synchronization.
+
+Background cycles run approximately every two minutes while this vault is open. Failures use shared exponential backoff; Sync now retries immediately, and Cancel stops between bounded requests. Status, retry delays, and errors appear in Personal sync; ordinary writing remains offline. Disable sync stops future cycles and requests cancellation. No app/service is restarted by installation.
+
+Initial explicit limits: 128 MiB per file, 100,000 files, 64 directory levels, UTF-8 visible paths. Oversized files require an exclusion; transfers fail visibly instead of silently truncating them. Servers must support WebDAV Depth:1 listings and strong quoted ETags with conditional writes. Large attachments are held one transfer at a time rather than streamed directly into a live destination. File/directory symlink substitution by other local processes remains subject to the vault engine's filesystem guarantees; Notes is a single-user application, not an adversarial multi-user filesystem sandbox.
+
+## Verification
+
+A deterministic transport fixture covers divergent edits, both deletion directions, keep-both, binary downloads, excluded/private paths, offline errors, interrupted baseline commits, stale resolutions, conditional upload races, and symlink escape refusal. A loopback HTTP fixture exercises the actual reqwest transport, Depth:1 XML parsing, binary GET/PUT, and failed ETag preconditions. Malformed/out-of-origin listings and insecure endpoints are rejected. No real Nextcloud account or credentials were available, so live-server interoperability and network performance remain unmeasured.

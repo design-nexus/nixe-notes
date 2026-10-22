@@ -1,0 +1,20 @@
+[package]
+name = "notes-vault"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+gio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+blake3.workspace = true
+rusqlite = { version = "0.40", features = ["bundled", "functions"] }
+notes-markdown = { path = "../notes-markdown" }
+tempfile = "3"
+percent-encoding = "2"
+pathdiff = "0.2"
+rustix = { version = "1", features = ["fs"] }
+similar = "3"
+petgraph = "0.8"

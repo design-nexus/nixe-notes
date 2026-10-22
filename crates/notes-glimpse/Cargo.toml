@@ -1,0 +1,10 @@
+[package]
+name = "nixe-notes-glimpse"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+[dependencies]
+notes-vault = { path = "../notes-vault" }
+serde_json.workspace = true
+anyhow.workspace = true
+glimpse-plugin-sdk = { git = "https://github.com/design-nexus/nixe-glimpse.git", rev = "e60055b3b10793646b07bcb8b403ef1c67cdfd01" }

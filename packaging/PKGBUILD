@@ -1,0 +1,28 @@
+pkgname=nixe-notes
+pkgver=0.5.5
+pkgrel=1
+pkgdesc='Native, local-first Markdown writing workspace'
+arch=('x86_64' 'aarch64')
+url='https://github.com/design-nexus/nixe-notes'
+license=('MIT')
+depends=('gtk4' 'gtksourceview5')
+makedepends=('rust' 'git')
+optdepends=('libsecret: desktop keyring for optional WebDAV app passwords')
+# Build from the standalone checkout: makepkg -p packaging/PKGBUILD
+build() {
+  cd "$startdir"
+  cargo build --release --locked -p nixe-notes -p nixe-notes-glimpse
+}
+package() {
+  cd "$startdir"
+  install -Dm755 target/release/nixe-notes "$pkgdir/usr/bin/nixe-notes"
+  install -Dm755 target/release/nixe-notes-glimpse "$pkgdir/usr/bin/nixe-notes-glimpse"
+  install -Dm755 target/release/nixe-notes-glimpse "$pkgdir/usr/share/nixe-notes/glimpse/nixe-notes-glimpse"
+  install -Dm644 data/glimpse/plugin.toml "$pkgdir/usr/share/nixe-notes/glimpse/plugin.toml"
+  install -Dm644 data/io.github.design_nexus.nixe.Notes.desktop "$pkgdir/usr/share/applications/io.github.design_nexus.nixe.Notes.desktop"
+  install -Dm644 data/icons/io.github.design_nexus.nixe.Notes.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/io.github.design_nexus.nixe.Notes.svg"
+  for document in README.md docs/SYNC.md docs/EXTENSIONS.md docs/INTEGRATIONS.md; do
+    install -Dm644 "$document" "$pkgdir/usr/share/doc/$pkgname/${document##*/}"
+  done
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

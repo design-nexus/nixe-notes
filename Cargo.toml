@@ -1,0 +1,27 @@
+[workspace]
+resolver = "3"
+members = ["crates/notes-app", "crates/notes-editor", "crates/notes-markdown", "crates/notes-vault", "crates/notes-ai", "crates/notes-glimpse", "crates/notes-sync", "crates/notes-plugins"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+authors = ["Ken Smith"]
+repository = "https://github.com/design-nexus/nixe-notes"
+
+[workspace.dependencies]
+gtk = { package = "gtk4", version = "0.11", features = ["v4_18"] }
+gio = "0.22"
+sourceview5 = "0.11"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-channel = "2"
+blake3 = "1"
+nixe-core = { git = "https://github.com/design-nexus/nixe-core.git", rev = "7cd0be5d09cd1d91510794f58bbc720605951c12" }
+nixe-ui = { git = "https://github.com/design-nexus/nixe-design.git", rev = "609c1d2a5af41a8ee3b76ba23611eb30d95a4743" }
+nixe-theme = { git = "https://github.com/design-nexus/nixe-design.git", rev = "609c1d2a5af41a8ee3b76ba23611eb30d95a4743" }
+
+[profile.release]
+lto = "thin"
+strip = true
+

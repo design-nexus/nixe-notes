@@ -1,0 +1,12 @@
+{
+  "api_version": 1,
+  "id": "example-writing",
+  "name": "Writing example",
+  "version": "1.0.0",
+  "module": "processor.wasm",
+  "permissions": ["selection.read", "edit.propose"],
+  "commands": [
+    {"id": "word-count", "title": "Count source words"},
+    {"id": "uppercase", "title": "Uppercase passage (review)"}
+  ]
+}

@@ -1,0 +1,382 @@
+//! Shared Nixe settings card, rebuilt from current vault/preferences when opened.
+use super::*;
+type SettingsAction = fn(&Rc<Ui>);
+fn group(body: &gtk::Box, name: &str) -> gtk::Box {
+    let section = widgets::vbox(0);
+    section.add_css_class("settings-group");
+    section.set_widget_name(name);
+    section.append(&widgets::label(&name.to_uppercase(), "group-title"));
+    body.append(&section);
+    section
+}
+fn number(
+    group: &gtk::Box,
+    name: &str,
+    description: &str,
+    id: &str,
+    value: f64,
+    range: std::ops::RangeInclusive<f64>,
+    change: impl Fn(f64) + 'static,
+) {
+    let spin = gtk::SpinButton::with_range(*range.start(), *range.end(), 1.0);
+    spin.set_widget_name(id);
+    spin.set_value(value);
+    spin.connect_value_changed(move |s| change(s.value()));
+    group.append(&widgets::row(name, description, Some(spin.upcast_ref())));
+}
+impl Ui {
+    pub(super) fn settings(self: &Rc<Self>) {
+        const GROUPS: &[(&str, &str, &str)] = &[
+            (
+                "Appearance",
+                "applications-graphics-symbolic",
+                "Themes, desktop following, motion",
+            ),
+            (
+                "Editor",
+                "format-text-rich-symbolic",
+                "Typography, width, editing mode",
+            ),
+            (
+                "Vault",
+                "folder-symbolic",
+                "Connected folder, templates, attachments",
+            ),
+            (
+                "Writing",
+                "document-edit-symbolic",
+                "Focus, typewriter, local history",
+            ),
+            (
+                "Integrations",
+                "applications-system-symbolic",
+                "Suite permissions, AI, sync, extensions",
+            ),
+        ];
+        let p = prefs::get();
+        let body = widgets::vbox(0);
+        body.set_hexpand(true);
+        let appearance = group(&body, "Appearance");
+        let available = nixe_theme::omarchy_available();
+        let (row, follow) = widgets::switch_row(
+            "Follow Omarchy theme",
+            if available {
+                "Follow desktop theme changes automatically"
+            } else {
+                "Use the saved Nixe theme until a desktop palette is available"
+            },
+            p.mode == nixe_theme::ThemeMode::Omarchy,
+            |active| {
+                prefs::update(|p| {
+                    p.mode = if active {
+                        nixe_theme::ThemeMode::Omarchy
+                    } else {
+                        nixe_theme::ThemeMode::Theme
+                    }
+                });
+                nixe_theme::apply();
+            },
+        );
+        appearance.append(&row);
+        let themes = nixe_theme::all();
+        let options = themes
+            .iter()
+            .map(|t| (t.id.clone(), t.name.clone()))
+            .collect::<Vec<_>>();
+        let dropdown = widgets::dropdown(&options, &p.theme);
+        dropdown.set_widget_name("notes-theme");
+        if available {
+            follow
+                .bind_property("active", &dropdown, "sensitive")
+                .invert_boolean()
+                .sync_create()
+                .build();
+        }
+        let follow = follow.downgrade();
+        dropdown.connect_selected_notify(move |d| {
+            if let Some(theme) = themes.get(d.selected() as usize) {
+                if let Some(follow) = follow.upgrade() {
+                    follow.set_active(false);
+                }
+                prefs::update(|p| {
+                    p.theme = theme.id.clone();
+                    p.mode = nixe_theme::ThemeMode::Theme;
+                });
+                nixe_theme::apply();
+            }
+        });
+        appearance.append(&widgets::row(
+            "Theme",
+            "Bundled and custom Nixe themes, including light and dark palettes",
+            Some(dropdown.upcast_ref()),
+        ));
+        let (row, _) = widgets::switch_row(
+            "Reduce motion",
+            "Disable interface transitions",
+            p.reduce_motion,
+            |value| {
+                prefs::update(|p| p.reduce_motion = value);
+                nixe_theme::apply();
+            },
+        );
+        appearance.append(&row);
+        let (row, _) =
+            widgets::switch_row("Glow", "Use the suite glow preference", p.glow, |value| {
+                prefs::update(|p| p.glow = value);
+                nixe_theme::apply();
+            });
+        appearance.append(&row);
+        appearance.append(&widgets::start_row());
+
+        let editor = group(&body, "Editor");
+        let weak = Rc::downgrade(self);
+        number(
+            &editor,
+            "Font size",
+            "Editor text size in points",
+            "notes-font-size",
+            p.font_size,
+            8.0..=32.0,
+            move |value| {
+                prefs::update(|p| p.font_size = value);
+                if let Some(ui) = weak.upgrade() {
+                    ui.apply_typography();
+                }
+            },
+        );
+        let family = gtk::Entry::builder()
+            .text(&p.font_family)
+            .width_chars(16)
+            .max_width_chars(24)
+            .build();
+        family.set_widget_name("notes-font-family");
+        let weak = Rc::downgrade(self);
+        family.connect_changed(move |e| {
+            if !e.text().trim().is_empty() {
+                prefs::update(|p| p.font_family = e.text().into());
+                if let Some(ui) = weak.upgrade() {
+                    ui.apply_typography();
+                }
+            }
+        });
+        editor.append(&widgets::row(
+            "Font family",
+            "Font used in the Markdown editor",
+            Some(family.upcast_ref()),
+        ));
+        let weak = Rc::downgrade(self);
+        number(
+            &editor,
+            "Line spacing",
+            "Extra space above and below each line",
+            "notes-line-spacing",
+            p.line_spacing as f64,
+            0.0..=20.0,
+            move |value| {
+                prefs::update(|p| p.line_spacing = value as i32);
+                if let Some(ui) = weak.upgrade() {
+                    ui.apply_typography();
+                }
+            },
+        );
+        let weak = Rc::downgrade(self);
+        let (row, _) = widgets::choice_row(
+            "Writing width",
+            "Center text in a comfortable writing column",
+            vec![
+                ("0".into(), "Full width".into()),
+                ("80".into(), "80 columns".into()),
+                ("100".into(), "100 columns".into()),
+            ],
+            &p.writing_width.to_string(),
+            move |v| {
+                prefs::update(|p| p.writing_width = v.parse().unwrap_or(0));
+                if let Some(ui) = weak.upgrade() {
+                    ui.apply_typography();
+                }
+            },
+        );
+        editor.append(&row);
+        let weak = Rc::downgrade(self);
+        let (row, _) = widgets::choice_row(
+            "Editor mode",
+            "Source, live formatting, or native reading",
+            vec![
+                ("source".into(), "Source".into()),
+                ("live".into(), "Live preview".into()),
+                ("reading".into(), "Reading".into()),
+            ],
+            &p.editor_mode,
+            move |value| {
+                prefs::update(|p| p.editor_mode = value.clone());
+                if let Some(ui) = weak.upgrade() {
+                    ui.live.set_active(value == "live");
+                    ui.reading.set_active(value == "reading");
+                    ui.sync_mode();
+                }
+            },
+        );
+        editor.append(&row);
+
+        let vault = group(&body, "Vault");
+        let current = self.root.borrow().clone().or_else(|| p.last_vault.clone());
+        let location = gtk::Label::new(Some(
+            &current
+                .map(|r| r.display().to_string())
+                .unwrap_or_else(|| "No vault connected".into()),
+        ));
+        location.set_widget_name("notes-vault-path");
+        location.set_selectable(true);
+        location.set_wrap(true);
+        location.set_xalign(0.0);
+        vault.append(&widgets::row(
+            "Connected vault",
+            "This folder reopens automatically when Notes starts",
+            None,
+        ));
+        vault.append(&location);
+        let connect = gtk::Button::with_label("Connect or change vault…");
+        let weak = Rc::downgrade(self);
+        connect.connect_clicked(move |_| {
+            if let Some(ui) = weak.upgrade() {
+                nixe_ui::settings_card::close();
+                ui.choose_vault();
+            }
+        });
+        vault.append(&connect);
+        let (row, _) = widgets::switch_row(
+            "Restore open notes",
+            "Reopen this vault's saved tabs; the vault itself is always remembered",
+            p.restore_tabs,
+            |value| prefs::update(|p| p.restore_tabs = value),
+        );
+        vault.append(&row);
+        let mut folder_entries = Vec::new();
+        for (index, label, value) in [
+            (0, "Templates folder", p.templates_folder),
+            (1, "Daily notes folder", p.daily_folder),
+            (2, "Daily template filename", p.daily_template),
+            (3, "Attachments folder", p.attachments_folder),
+        ] {
+            let entry = gtk::Entry::builder()
+                .text(value)
+                .width_chars(14)
+                .max_width_chars(24)
+                .build();
+            entry.set_widget_name(&format!("notes-vault-folder-{index}"));
+            folder_entries.push(entry.clone());
+            vault.append(&widgets::row(
+                label,
+                "Relative to the vault; leave empty to use its root",
+                Some(entry.upcast_ref()),
+            ));
+        }
+
+        let folder_status = gtk::Label::new(Some(
+            "Folder changes are saved together with Apply folders.",
+        ));
+        folder_status.set_wrap(true);
+        folder_status.set_xalign(0.0);
+        vault.append(&folder_status);
+        let apply = gtk::Button::with_label("Apply folders");
+        apply.set_widget_name("notes-apply-folders");
+        apply.connect_clicked(move |_| {
+            let values=folder_entries.iter().map(|entry|entry.text().to_string()).collect::<Vec<_>>();
+            let mut valid=true;
+            for(entry,value)in folder_entries.iter().zip(&values){
+                let allowed=!std::path::Path::new(value).is_absolute()&&!value.contains('\\')&&std::path::Path::new(value).components().all(|c|matches!(c,std::path::Component::Normal(name)if !name.to_string_lossy().starts_with('.')));
+                if allowed {entry.remove_css_class("error");}else{entry.add_css_class("error");valid=false;}
+            }
+            if !valid {folder_status.set_text("Use relative folders without .. or hidden components. Previous settings are retained.");return;}
+            prefs::update(|p|{p.templates_folder=values[0].clone();p.daily_folder=values[1].clone();p.daily_template=values[2].clone();p.attachments_folder=values[3].clone();});folder_status.set_text("Folder settings saved.");
+        });
+        vault.append(&apply);
+
+        let writing = group(&body, "Writing");
+        let weak = Rc::downgrade(self);
+        let (row, _) = widgets::switch_row(
+            "Focus mode",
+            "Hide navigation and toolbars while writing (F11)",
+            p.focus_mode,
+            move |value| {
+                prefs::update(|p| p.focus_mode = value);
+                if let Some(ui) = weak.upgrade() {
+                    ui.apply_writing();
+                }
+            },
+        );
+        writing.append(&row);
+        let weak = Rc::downgrade(self);
+        let (row, _) = widgets::switch_row(
+            "Typewriter scrolling",
+            "Keep the active line centered",
+            p.typewriter,
+            move |value| {
+                prefs::update(|p| p.typewriter = value);
+                if let Some(ui) = weak.upgrade() {
+                    ui.apply_writing();
+                }
+            },
+        );
+        writing.append(&row);
+        number(
+            &writing,
+            "History versions per note",
+            "Automatic local snapshots; 0 disables future snapshots",
+            "notes-history-count",
+            p.history_keep as f64,
+            0.0..=2000.0,
+            |value| prefs::update(|p| p.history_keep = value as u32),
+        );
+        number(
+            &writing,
+            "History retention days",
+            "Keep recent snapshots; 0 removes the age limit",
+            "notes-history-days",
+            p.history_days as f64,
+            0.0..=3650.0,
+            |value| prefs::update(|p| p.history_days = value as u32),
+        );
+        let integrations = group(&body, "Integrations");
+        integrations.append(&self.integration_controls());
+        let actions: Vec<(&str, SettingsAction)> = vec![
+            #[cfg(feature = "ai")]
+            (
+                "Local AI and semantic indexing…",
+                Ui::intelligence_preferences,
+            ),
+            #[cfg(feature = "sync")]
+            ("Personal sync settings…", Ui::sync_preferences),
+            #[cfg(feature = "plugins")]
+            ("Manage extensions…", Ui::extensions),
+            ("Keyboard shortcuts…", Ui::shortcuts_from_settings),
+        ];
+        for (label, action) in actions {
+            let button = gtk::Button::with_label(label);
+            let weak = Rc::downgrade(self);
+            button.connect_clicked(move |_| {
+                if let Some(ui) = weak.upgrade() {
+                    nixe_ui::settings_card::close();
+                    action(&ui);
+                }
+            });
+            integrations.append(&button);
+        }
+        let root = scroll(&body);
+        root.set_vexpand(true);
+        root.set_hexpand(true);
+        nixe_ui::settings_card::open_page(
+            &self.overlay,
+            &self.window,
+            nixe_ui::settings_card::Spec {
+                groups: GROUPS,
+                search_text: None,
+            },
+            root.upcast_ref(),
+            &body,
+        );
+    }
+    fn shortcuts_from_settings(self: &Rc<Self>) {
+        self.shortcuts();
+    }
+}
