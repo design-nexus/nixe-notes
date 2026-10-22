@@ -1,6 +1,8 @@
 //! Personal file synchronization. All APIs block: use a dedicated network worker.
+mod cloud;
 mod webdav;
 use anyhow::{Context, Result, bail, ensure};
+pub use cloud::{CloudRemote, online_profiles};
 use gio::prelude::*;
 pub use nixe_sync::{Secret, delay, lookup_secret, store_secret};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -18,6 +20,7 @@ pub const MAX_FILE: u64 = 128 * 1024 * 1024;
 #[serde(default)]
 pub struct Config {
     pub root: PathBuf,
+    pub account_id: Option<String>,
     /// Full URL of a dedicated WebDAV vault collection; never contains credentials.
     pub endpoint: String,
     pub username: String,
@@ -27,6 +30,11 @@ pub struct Config {
 }
 impl Config {
     pub fn id(&self) -> String {
+        if let Some(id) = self.account_id.as_ref() {
+            return blake3::hash(format!("cloud:{id}:{}", self.root.display()).as_bytes())
+                .to_hex()
+                .to_string();
+        }
         blake3::hash(
             format!(
                 "{}\n{}\n{}",
@@ -44,6 +52,9 @@ impl Config {
             self.root.is_absolute() && self.root.is_dir(),
             "Choose an existing vault"
         );
+        if self.account_id.is_some() {
+            return Ok(());
+        }
         ensure!(
             !self.username.trim().is_empty() && !self.username.chars().any(char::is_control),
             "Enter a WebDAV username"
@@ -83,11 +94,31 @@ pub struct RemoteFile {
     pub size: u64,
 }
 pub trait Transport {
+    fn has_divergent_versions(&self, _path: &str) -> bool {
+        false
+    }
     fn list(&mut self, cancel: &AtomicBool) -> Result<BTreeMap<String, RemoteFile>>;
     fn get(&mut self, path: &str, etag: &str) -> Result<Vec<u8>>;
     /// None means create-only; Some means replace precisely this remote version.
     fn put(&mut self, path: &str, bytes: &[u8], etag: Option<&str>) -> Result<String>;
     fn delete(&mut self, path: &str, etag: &str) -> Result<()>;
+}
+impl<T: Transport + ?Sized> Transport for Box<T> {
+    fn has_divergent_versions(&self, path: &str) -> bool {
+        (**self).has_divergent_versions(path)
+    }
+    fn list(&mut self, c: &AtomicBool) -> Result<BTreeMap<String, RemoteFile>> {
+        (**self).list(c)
+    }
+    fn get(&mut self, p: &str, e: &str) -> Result<Vec<u8>> {
+        (**self).get(p, e)
+    }
+    fn put(&mut self, p: &str, b: &[u8], e: Option<&str>) -> Result<String> {
+        (**self).put(p, b, e)
+    }
+    fn delete(&mut self, p: &str, e: &str) -> Result<()> {
+        (**self).delete(p, e)
+    }
 }
 #[derive(Clone, Debug, Default)]
 pub struct Report {
@@ -287,7 +318,9 @@ impl Engine {
             let hash = bytes.as_deref().map(digest);
             let base = self.baseline(&path)?;
             let file = files.get(&path);
-            if let (Some(h), Some((b, e)), Some(r)) = (&hash, &base, file)
+            let divergent = remote.has_divergent_versions(&path);
+            if !divergent
+                && let (Some(h), Some((b, e)), Some(r)) = (&hash, &base, file)
                 && h == b
                 && e == &r.etag
             {
@@ -297,6 +330,15 @@ impl Engine {
             }
             let other = file.map(|f| remote.get(&path, &f.etag)).transpose()?;
             let other_hash = other.as_deref().map(digest);
+            if divergent {
+                self.conflict(
+                    &path,
+                    bytes.as_deref(),
+                    other.as_deref(),
+                    file.map(|f| f.etag.as_str()),
+                )?;
+                continue;
+            }
             if hash == other_hash {
                 if let (Some(h), Some(r)) = (&hash, file) {
                     self.commit(&path, h, &r.etag)?;
@@ -382,10 +424,16 @@ impl Engine {
                 }
                 self.replace_local(&conflict.path, local.as_deref(), conflict.remote.as_deref())?;
                 if let Some(bytes) = &conflict.remote {
+                    let reviewed = conflict.etag.as_deref().context("Missing remote version")?;
+                    let merged = if remote.has_divergent_versions(&conflict.path) {
+                        Some(remote.put(&conflict.path, bytes, Some(reviewed))?)
+                    } else {
+                        None
+                    };
                     self.commit(
                         &conflict.path,
                         &digest(bytes),
-                        conflict.etag.as_deref().context("Missing remote version")?,
+                        merged.as_deref().unwrap_or(reviewed),
                     )?;
                 } else {
                     self.forget(&conflict.path)?;

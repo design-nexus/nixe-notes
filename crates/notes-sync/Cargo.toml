@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+nixe-cloud = { git = "https://github.com/design-nexus/nixe-cloud.git", rev = "053a31d9704c5f0379c1b17e70a659b353357881" }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -5,14 +5,37 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-#[derive(Default)]
 pub(super) struct SyncState {
     busy: Cell<bool>,
+    online: RefCell<Vec<Config>>,
+    discovered: Cell<u64>,
+    discovering: Cell<bool>,
     pub(super) cancel: Arc<AtomicBool>,
     attempt: Cell<u32>,
     next: Cell<u64>,
     status: RefCell<String>,
     observers: RefCell<Vec<glib::WeakRef<gtk::Label>>>,
+}
+impl Default for SyncState {
+    fn default() -> Self {
+        Self {
+            busy: Cell::new(false),
+            online: RefCell::new(
+                prefs::get()
+                    .online_sync_profiles
+                    .into_iter()
+                    .filter_map(|v| serde_json::from_value(v).ok())
+                    .collect(),
+            ),
+            discovered: Cell::new(0),
+            discovering: Cell::new(false),
+            cancel: Arc::new(AtomicBool::new(false)),
+            attempt: Cell::new(0),
+            next: Cell::new(0),
+            status: RefCell::new(String::new()),
+            observers: RefCell::new(Vec::new()),
+        }
+    }
 }
 impl SyncState {
     fn status(&self, text: &str) {
@@ -39,11 +62,23 @@ fn profile(root: &std::path::Path) -> Option<Config> {
         .filter_map(|v| serde_json::from_value::<Config>(v).ok())
         .find(|c| c.root == root)
 }
-fn remote(config: &Config) -> anyhow::Result<WebDav> {
+fn remote(config: &Config) -> anyhow::Result<Box<dyn notes_sync::Transport>> {
+    if let Some(id) = config.account_id.as_deref() {
+        return Ok(Box::new(notes_sync::CloudRemote::connect(id)?));
+    }
     let password = notes_sync::lookup_secret("nixe-notes", &config.id(), "webdav")?;
-    WebDav::new(config, password)
+    Ok(Box::new(WebDav::new(config, password)?))
 }
 impl Ui {
+    fn sync_profile(&self, root: &std::path::Path) -> Option<Config> {
+        self.synchronization
+            .online
+            .borrow()
+            .iter()
+            .find(|c| c.root == root)
+            .cloned()
+            .or_else(|| profile(root))
+    }
     pub(super) fn sync_menu(self: &Rc<Self>, menu: &gtk::Box) {
         for (label, action) in [
             ("Personal sync…", 0),
@@ -84,10 +119,21 @@ impl Ui {
             self.message("Open a vault first");
             return;
         };
-        let config = profile(&root).unwrap_or(Config {
+        let config = self.sync_profile(&root).unwrap_or(Config {
             root: root.clone(),
             ..Default::default()
         });
+        if config.account_id.is_some() {
+            let _ = gio::Subprocess::newv(
+                &[
+                    std::ffi::OsStr::new("nixe-settings"),
+                    std::ffi::OsStr::new("--section"),
+                    std::ffi::OsStr::new("online-accounts"),
+                ],
+                gio::SubprocessFlags::NONE,
+            );
+            return;
+        }
         let dialog = Prompt::new(
             &self.window,
             "Personal sync",
@@ -96,6 +142,18 @@ impl Ui {
             720,
             560,
         );
+        let accounts = gtk::Button::with_label("Online Accounts…");
+        accounts.connect_clicked(|_| {
+            let _ = gio::Subprocess::newv(
+                &[
+                    std::ffi::OsStr::new("nixe-settings"),
+                    std::ffi::OsStr::new("--section"),
+                    std::ffi::OsStr::new("online-accounts"),
+                ],
+                gio::SubprocessFlags::NONE,
+            );
+        });
+        dialog.content_area().append(&accounts);
         let endpoint = gtk::Entry::builder()
             .placeholder_text("https://server/remote.php/dav/files/user/Notes/")
             .text(&config.endpoint)
@@ -170,11 +228,11 @@ impl Ui {
         dialog.connect_response(move |d,response|{
             if !matches!(response,gtk::ResponseType::Accept|gtk::ResponseType::Other(1)){d.close();return;}
             let Some(ui)=weak.upgrade()else{return;};if ui.synchronization.busy.get(){ui.message("Cancel the active sync before changing its account");return;}
-            let config=Config{root:root.clone(),endpoint:endpoint.text().trim().into(),username:username.text().trim().into(),enabled:enabled.is_active(),excluded:excluded.text().split(';').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect()};
+            let config=Config{account_id:None,root:root.clone(),endpoint:endpoint.text().trim().into(),username:username.text().trim().into(),enabled:enabled.is_active(),excluded:excluded.text().split(';').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect()};
             let secret=password.text().to_string();password.set_text("");let output=status.downgrade();let weak=Rc::downgrade(&ui);let create=response==gtk::ResponseType::Other(1);
             status.set_text(if create{"Creating collection…"}else{"Saving account in the desktop keyring…"});
             worker::synchronization(move ||->anyhow::Result<Config>{config.validate()?;if !secret.is_empty(){notes_sync::store_secret("nixe-notes",&config.id(),"webdav",&notes_sync::Secret::new(secret)?)?;}
-if create{remote(&config)?.create_collection()?;}else if config.enabled{let _=notes_sync::lookup_secret("nixe-notes",&config.id(),"webdav")?;}Ok(config)},move |result|{if let Some(label)=output.upgrade(){match result{Ok(config)=>{if !create{prefs::update(|p|{p.sync_profiles.retain(|v|v["root"].as_str()!=config.root.to_str());if let Ok(value)=serde_json::to_value(&config){p.sync_profiles.push(value);}});}label.set_text(if create{"Remote collection created. Save settings to enable sync."}else{"Settings saved. Background sync is optional; conflicts remain reviewable."});if let Some(ui)=weak.upgrade(){ui.synchronization.next.set(0);if !create{ui.sync_now(false);}}},Err(e)=>label.set_text(&format!("Sync settings: {e:#}"))}}});
+if create{WebDav::new(&config,notes_sync::lookup_secret("nixe-notes",&config.id(),"webdav")?)?.create_collection()?;}else if config.enabled{let _=notes_sync::lookup_secret("nixe-notes",&config.id(),"webdav")?;}Ok(config)},move |result|{if let Some(label)=output.upgrade(){match result{Ok(config)=>{if !create{prefs::update(|p|{p.sync_profiles.retain(|v|v["root"].as_str()!=config.root.to_str());if let Ok(value)=serde_json::to_value(&config){p.sync_profiles.push(value);}});}label.set_text(if create{"Remote collection created. Save settings to enable sync."}else{"Settings saved. Background sync is optional; conflicts remain reviewable."});if let Some(ui)=weak.upgrade(){ui.synchronization.next.set(0);if !create{ui.sync_now(false);}}},Err(e)=>label.set_text(&format!("Sync settings: {e:#}"))}}});
         });
         dialog.present();
     }
@@ -185,7 +243,37 @@ if create{remote(&config)?.create_collection()?;}else if config.enabled{let _=no
             }
             return;
         };
-        let Some(config) = profile(&root).filter(|c| c.enabled) else {
+        if self.synchronization.discovering.get() {
+            return;
+        }
+        if now().saturating_sub(self.synchronization.discovered.get()) >= 10 {
+            self.synchronization.discovering.set(true);
+            self.synchronization.discovered.set(now());
+            let weak = Rc::downgrade(self);
+            worker::run(notes_sync::online_profiles, move |result| {
+                if let Some(ui) = weak.upgrade() {
+                    ui.synchronization.discovering.set(false);
+                    if let Ok(mut profiles) = result {
+                        for old in ui.synchronization.online.borrow().iter() {
+                            if !profiles.iter().any(|p| p.root == old.root) {
+                                let mut disabled = old.clone();
+                                disabled.enabled = false;
+                                profiles.push(disabled);
+                            }
+                        }
+                        let saved = profiles
+                            .iter()
+                            .filter_map(|p| serde_json::to_value(p).ok())
+                            .collect::<Vec<_>>();
+                        prefs::update(|p| p.online_sync_profiles = saved);
+                        ui.synchronization.online.replace(profiles);
+                    }
+                    ui.sync_now(manual);
+                }
+            });
+            return;
+        }
+        let Some(config) = self.sync_profile(&root).filter(|c| c.enabled) else {
             if manual {
                 self.sync_preferences();
             }
@@ -264,7 +352,12 @@ if create{remote(&config)?.create_collection()?;}else if config.enabled{let _=no
         );
     }
     pub(super) fn sync_conflicts(self: &Rc<Self>) {
-        let Some(config) = self.root.borrow().as_ref().and_then(|r| profile(r)) else {
+        let Some(config) = self
+            .root
+            .borrow()
+            .as_ref()
+            .and_then(|r| self.sync_profile(r))
+        else {
             self.message("Configure personal sync first");
             return;
         };
@@ -404,7 +497,12 @@ if create{remote(&config)?.create_collection()?;}else if config.enabled{let _=no
         dialog.present();
     }
     pub(super) fn sync_versions(self: &Rc<Self>) {
-        let Some(config) = self.root.borrow().as_ref().and_then(|r| profile(r)) else {
+        let Some(config) = self
+            .root
+            .borrow()
+            .as_ref()
+            .and_then(|r| self.sync_profile(r))
+        else {
             self.message("Configure personal sync first");
             return;
         };

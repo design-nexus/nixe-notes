@@ -24,3 +24,28 @@ Initial explicit limits: 128 MiB per file, 100,000 files, 64 directory levels, U
 ## Verification
 
 A deterministic transport fixture covers divergent edits, both deletion directions, keep-both, binary downloads, excluded/private paths, offline errors, interrupted baseline commits, stale resolutions, conditional upload races, and symlink escape refusal. A loopback HTTP fixture exercises the actual reqwest transport, Depth:1 XML parsing, binary GET/PUT, and failed ETag preconditions. Malformed/out-of-origin listings and insecure endpoints are rejected. No real Nextcloud account or credentials were available, so live-server interoperability and network performance remain unmeasured.
+
+## Online Accounts
+
+Settings → Online Accounts → account settings → Notes selects a local vault and
+a dedicated cloud folder. Notes discovers this preference on a worker, refreshes
+it while running, and prioritizes it over a personal WebDAV profile for the same
+vault. Storage is independent: the vault can sync while the account stays hidden
+from Files. Existing personal WebDAV profiles and their keyring secrets remain
+unchanged. Cached account metadata contains no credentials; an unavailable Cloud
+service pauses account sync rather than switching a known vault to another server.
+
+Cloud-backed sync supports any configured rclone provider, including Drive,
+OneDrive, Dropbox and Nextcloud. To retain concurrent edits without depending on
+provider-specific atomic replacements, its dedicated folder contains ordinary
+Markdown/attachment revisions under `content/<revision-id>/<relative-path>` and
+immutable JSON records under `revisions/`. It is a revision store, not a flat-folder
+mirror; existing personal WebDAV sync remains the flat-folder option. Simultaneous
+branches require review through the existing conflict UI. Remote removals append
+tombstones, retaining cloud bytes; there is no automatic history pruning.
+
+Initial Cloud limits are 32 MiB per file and 10,000 revision records per account
+folder. Account removal and disabling sync never delete these cloud revisions.
+Notes never receives provider tokens. Its connection is a same-UID private Unix
+socket scoped to the account's configured Notes folder. Cancel stops between
+bounded requests; a started immutable upload may finish before cancellation.
