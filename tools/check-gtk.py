@@ -40,9 +40,16 @@ with tempfile.TemporaryDirectory(prefix="notes-gtk-") as scratch:
         profile = ["--release"] if os.environ.get("NOTES_TEST_RELEASE") == "1" else []
         selected = [os.environ["NOTES_GTK_FILTER"]] if os.environ.get("NOTES_GTK_FILTER") else []
         packages = ["-p", os.environ["NOTES_GTK_PACKAGE"]] if os.environ.get("NOTES_GTK_PACKAGE") else ["--workspace"]
-        subprocess.run(["dbus-run-session", "--", "cargo", "test", "--locked", *packages,
-                        *profile, *selected, "--", "--ignored", "--test-threads=1", "--nocapture"],
-                       cwd=root, env=env, check=True)
+        cargo = ["dbus-run-session", "--", "cargo", "test", "--locked", *packages, *profile, *selected, "--"]
+        listed = subprocess.run([*cargo, "--ignored", "--list"], cwd=root, env=env, check=True,
+                                capture_output=True, text=True)
+        tests = [line.rsplit(":", 1)[0].strip()
+                 for line in listed.stdout.splitlines() if line.endswith(": test")]
+        if not tests:
+            raise RuntimeError("no ignored GTK tests found")
+        for name in tests:
+            subprocess.run([*cargo, "--ignored", "--exact", name, "--test-threads=1", "--nocapture"],
+                           cwd=root, env=env, check=True)
     finally:
         daemon.terminate()
         daemon.wait(timeout=5)
