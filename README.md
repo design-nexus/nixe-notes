@@ -2,6 +2,12 @@
 
 A native Rust/GTK4 Markdown workspace for Linux and the Nixe suite. Notes opens ordinary Markdown directories and existing Obsidian vaults directly. MIT licensed. Phases 1–5 writing, knowledge, optional local integrations, personal synchronization, and isolated extension commands are implemented. See the [implementation status and limits](PLAN.md).
 
+## Install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/design-nexus/nixe-notes/main/install.sh | bash
+```
+
 ## Available now
 
 - Source, live-preview, and native reading modes sharing one authoritative Markdown buffer. Live preview hides delimiters away from the cursor; reading mode renders headings, emphasis, links, highlighted code, tables, callouts, tasks, images, and note transclusions.
