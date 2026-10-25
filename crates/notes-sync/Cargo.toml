@@ -12,7 +12,7 @@ serde_json.workspace = true
 blake3.workspace = true
 gio.workspace = true
 notes-vault = { path = "../notes-vault" }
-nixe-sync = { git = "https://github.com/design-nexus/nixe-core.git", rev = "7cd0be5d09cd1d91510794f58bbc720605951c12" }
+nixe-sync = { git = "https://github.com/design-nexus/nixe-core.git", rev = "87682e6c936b6a4f006639b1a1c099e96346c07c" }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 url = "2"
 percent-encoding = "2"
