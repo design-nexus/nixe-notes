@@ -11,7 +11,8 @@ if [[ -z ${BASH_SOURCE[0]:-} ]]; then
   exit
 fi
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-if [[ ${NIXE_SKIP_BUILD:-0} != 1 ]]; then
+# A release archive (.prebuilt) brings its binaries.
+if [[ ${NIXE_SKIP_BUILD:-0} != 1 && ! -f $root/.prebuilt ]]; then
   cargo build --release --locked --manifest-path "$root/Cargo.toml" -p nixe-notes -p nixe-notes-glimpse
 fi
 share="${XDG_DATA_HOME:-$HOME/.local/share}"

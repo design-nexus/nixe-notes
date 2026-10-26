@@ -1,0 +1,22 @@
+{
+  "application": "notes",
+  "directory": ".",
+  "packages": [
+    "nixe-notes",
+    "nixe-notes-glimpse"
+  ],
+  "manifest": "Cargo.toml",
+  "prepare": [],
+  "binaries": [],
+  "test_commands": [
+    [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "nixe-notes",
+      "-p",
+      "nixe-notes-glimpse"
+    ]
+  ]
+}
