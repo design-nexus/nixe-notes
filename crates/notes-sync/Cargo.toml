@@ -5,14 +5,14 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-nixe-cloud = { git = "https://github.com/design-nexus/nixe-cloud.git", rev = "053a31d9704c5f0379c1b17e70a659b353357881" }
+nyx-cloud = { git = "https://github.com/design-nexus/nyx-cloud.git", rev = "072cb06bf7a975e536b8fcdd2d19ec7a911e14d7" }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 blake3.workspace = true
 gio.workspace = true
 notes-vault = { path = "../notes-vault" }
-nixe-sync = { git = "https://github.com/design-nexus/nixe-core.git", rev = "87682e6c936b6a4f006639b1a1c099e96346c07c" }
+nyx-sync = { git = "https://github.com/design-nexus/nyx-core.git", rev = "52cba5e27a3dd5f00c780f53e423302b4b5f9c9c" }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 url = "2"
 percent-encoding = "2"

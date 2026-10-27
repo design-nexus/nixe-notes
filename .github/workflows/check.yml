@@ -19,4 +19,4 @@ jobs:
           cargo test --locked --workspace
           python3 tools/check-gtk.py
       - name: Build release
-        run: cargo build --release --locked -p nixe-notes -p nixe-notes-glimpse
+        run: cargo build --release --locked -p nyx-notes -p nyx-notes-glimpse

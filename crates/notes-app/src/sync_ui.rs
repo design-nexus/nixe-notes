@@ -66,7 +66,7 @@ fn remote(config: &Config) -> anyhow::Result<Box<dyn notes_sync::Transport>> {
     if let Some(id) = config.account_id.as_deref() {
         return Ok(Box::new(notes_sync::CloudRemote::connect(id)?));
     }
-    let password = notes_sync::lookup_secret("nixe-notes", &config.id(), "webdav")?;
+    let password = notes_sync::lookup_secret("nyx-notes", &config.id(), "webdav")?;
     Ok(Box::new(WebDav::new(config, password)?))
 }
 impl Ui {
@@ -126,7 +126,7 @@ impl Ui {
         if config.account_id.is_some() {
             let _ = gio::Subprocess::newv(
                 &[
-                    std::ffi::OsStr::new("nixe-settings"),
+                    std::ffi::OsStr::new("nyx-settings"),
                     std::ffi::OsStr::new("--section"),
                     std::ffi::OsStr::new("online-accounts"),
                 ],
@@ -146,7 +146,7 @@ impl Ui {
         accounts.connect_clicked(|_| {
             let _ = gio::Subprocess::newv(
                 &[
-                    std::ffi::OsStr::new("nixe-settings"),
+                    std::ffi::OsStr::new("nyx-settings"),
                     std::ffi::OsStr::new("--section"),
                     std::ffi::OsStr::new("online-accounts"),
                 ],
@@ -231,8 +231,8 @@ impl Ui {
             let config=Config{account_id:None,root:root.clone(),endpoint:endpoint.text().trim().into(),username:username.text().trim().into(),enabled:enabled.is_active(),excluded:excluded.text().split(';').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect()};
             let secret=password.text().to_string();password.set_text("");let output=status.downgrade();let weak=Rc::downgrade(&ui);let create=response==gtk::ResponseType::Other(1);
             status.set_text(if create{"Creating collection…"}else{"Saving account in the desktop keyring…"});
-            worker::synchronization(move ||->anyhow::Result<Config>{config.validate()?;if !secret.is_empty(){notes_sync::store_secret("nixe-notes",&config.id(),"webdav",&notes_sync::Secret::new(secret)?)?;}
-if create{WebDav::new(&config,notes_sync::lookup_secret("nixe-notes",&config.id(),"webdav")?)?.create_collection()?;}else if config.enabled{let _=notes_sync::lookup_secret("nixe-notes",&config.id(),"webdav")?;}Ok(config)},move |result|{if let Some(label)=output.upgrade(){match result{Ok(config)=>{if !create{prefs::update(|p|{p.sync_profiles.retain(|v|v["root"].as_str()!=config.root.to_str());if let Ok(value)=serde_json::to_value(&config){p.sync_profiles.push(value);}});}label.set_text(if create{"Remote collection created. Save settings to enable sync."}else{"Settings saved. Background sync is optional; conflicts remain reviewable."});if let Some(ui)=weak.upgrade(){ui.synchronization.next.set(0);if !create{ui.sync_now(false);}}},Err(e)=>label.set_text(&format!("Sync settings: {e:#}"))}}});
+            worker::synchronization(move ||->anyhow::Result<Config>{config.validate()?;if !secret.is_empty(){notes_sync::store_secret("nyx-notes",&config.id(),"webdav",&notes_sync::Secret::new(secret)?)?;}
+if create{WebDav::new(&config,notes_sync::lookup_secret("nyx-notes",&config.id(),"webdav")?)?.create_collection()?;}else if config.enabled{let _=notes_sync::lookup_secret("nyx-notes",&config.id(),"webdav")?;}Ok(config)},move |result|{if let Some(label)=output.upgrade(){match result{Ok(config)=>{if !create{prefs::update(|p|{p.sync_profiles.retain(|v|v["root"].as_str()!=config.root.to_str());if let Ok(value)=serde_json::to_value(&config){p.sync_profiles.push(value);}});}label.set_text(if create{"Remote collection created. Save settings to enable sync."}else{"Settings saved. Background sync is optional; conflicts remain reviewable."});if let Some(ui)=weak.upgrade(){ui.synchronization.next.set(0);if !create{ui.sync_now(false);}}},Err(e)=>label.set_text(&format!("Sync settings: {e:#}"))}}});
         });
         dialog.present();
     }
@@ -309,7 +309,7 @@ if create{WebDav::new(&config,notes_sync::lookup_secret("nixe-notes",&config.id(
             )
             .collect();
         let cancel = self.synchronization.cancel.clone();
-        let state = nixe_core::paths::state_dir();
+        let state = nyx_core::paths::state_dir();
         let weak = Rc::downgrade(self);
         let current_root = root.clone();
         worker::synchronization(
@@ -361,7 +361,7 @@ if create{WebDav::new(&config,notes_sync::lookup_secret("nixe-notes",&config.id(
             self.message("Configure personal sync first");
             return;
         };
-        let state = nixe_core::paths::state_dir();
+        let state = nyx_core::paths::state_dir();
         let weak = Rc::downgrade(self);
         let c = config.clone();
         worker::run(
@@ -411,7 +411,7 @@ if create{WebDav::new(&config,notes_sync::lookup_secret("nixe-notes",&config.id(
         );
     }
     fn sync_review(self: &Rc<Self>, config: Config, path: String) {
-        let state = nixe_core::paths::state_dir();
+        let state = nyx_core::paths::state_dir();
         let weak = Rc::downgrade(self);
         let c = config.clone();
         worker::run(
@@ -493,7 +493,7 @@ if create{WebDav::new(&config,notes_sync::lookup_secret("nixe-notes",&config.id(
         }
         let weak = Rc::downgrade(self);
         dialog.connect_response(move |d,response|{let choice=match response{gtk::ResponseType::Other(1)=>Resolution::Local,gtk::ResponseType::Other(2)=>Resolution::Remote,gtk::ResponseType::Other(3)=>Resolution::Both,_=>{d.close();return;}};let Some(ui)=weak.upgrade()else{return;};if ui.synchronization.busy.get(){ui.message("Wait for the current sync to finish before resolving");return;}let target=config.root.join(&conflict.path);if ui.docs.borrow().iter().any(|doc|doc.path==target&&(doc.dirty.get()||doc.saving.get()||doc.recovery_pending.get()||doc.conflict.get()))||ui.canvases.borrow().get(&target).is_some_and(|(_,dirty)|dirty.get()){ui.message("Save or resolve the open document before resolving its sync conflict");return;}
-            ui.synchronization.busy.set(true);let c=config.clone();let conflict=conflict.clone();let state=nixe_core::paths::state_dir();let weak=Rc::downgrade(&ui);worker::synchronization(move ||Engine::open(&state,c.clone())?.resolve(&mut remote(&c)?,&conflict,choice),move |result|{if let Some(ui)=weak.upgrade(){ui.synchronization.busy.set(false);match result{Ok(())=>{ui.message("Reviewed sync resolution applied; previous bytes remain in sync recovery history");ui.populate_root();ui.rebuild();ui.synchronization.next.set(0);},Err(e)=>ui.message(&format!("Resolution stopped: {e:#}. Synchronize again for a fresh comparison."))}}});d.close();});
+            ui.synchronization.busy.set(true);let c=config.clone();let conflict=conflict.clone();let state=nyx_core::paths::state_dir();let weak=Rc::downgrade(&ui);worker::synchronization(move ||Engine::open(&state,c.clone())?.resolve(&mut remote(&c)?,&conflict,choice),move |result|{if let Some(ui)=weak.upgrade(){ui.synchronization.busy.set(false);match result{Ok(())=>{ui.message("Reviewed sync resolution applied; previous bytes remain in sync recovery history");ui.populate_root();ui.rebuild();ui.synchronization.next.set(0);},Err(e)=>ui.message(&format!("Resolution stopped: {e:#}. Synchronize again for a fresh comparison."))}}});d.close();});
         dialog.present();
     }
     pub(super) fn sync_versions(self: &Rc<Self>) {
@@ -530,7 +530,7 @@ if create{WebDav::new(&config,notes_sync::lookup_secret("nixe-notes",&config.id(
         let find = gtk::Button::with_label("Find recovery versions");
         dialog.content_area().append(&find);
         let weak = Rc::downgrade(self);
-        find.connect_clicked(move |_|{let c=config.clone();let path=path.text().to_string();let state=nixe_core::paths::state_dir();let weak=weak.clone();let list=list.downgrade();worker::run(move ||Engine::open(&state,c.clone())?.versions(&path).map(|v|(c,v)),move |result|{let(Some(ui),Some(list))=(weak.upgrade(),list.upgrade())else{return;};clear(&list);match result{Err(e)=>ui.message(&format!("Sync history: {e:#}")),Ok((config,versions))=>{if versions.is_empty(){list.append(&widgets::label("No retained versions for this path","caption"));}for(id,created,size)in versions{let b=gtk::Button::with_label(&format!("Version {id} · UTC timestamp {created} · {size} bytes · Export…"));let c=config.clone();let weak=Rc::downgrade(&ui);b.connect_clicked(move |_|{let Some(ui)=weak.upgrade()else{return;};let picker=gtk::FileDialog::builder().title("Export recovery version").initial_name(format!("recovered-{id}")).build();let c=c.clone();let weak=Rc::downgrade(&ui);picker.save(Some(&ui.window),gio::Cancellable::NONE,move |result|{if let Ok(file)=result&&let Some(target)=file.path(){let state=nixe_core::paths::state_dir();worker::run(move ||Engine::open(&state,c)?.export_version(id,&target),move |result|{if let Some(ui)=weak.upgrade(){match result{Ok(())=>ui.message("Recovery copy exported"),Err(e)=>ui.message(&format!("Recovery export: {e:#}"))}}});}});});list.append(&b);}}}});});
+        find.connect_clicked(move |_|{let c=config.clone();let path=path.text().to_string();let state=nyx_core::paths::state_dir();let weak=weak.clone();let list=list.downgrade();worker::run(move ||Engine::open(&state,c.clone())?.versions(&path).map(|v|(c,v)),move |result|{let(Some(ui),Some(list))=(weak.upgrade(),list.upgrade())else{return;};clear(&list);match result{Err(e)=>ui.message(&format!("Sync history: {e:#}")),Ok((config,versions))=>{if versions.is_empty(){list.append(&widgets::label("No retained versions for this path","caption"));}for(id,created,size)in versions{let b=gtk::Button::with_label(&format!("Version {id} · UTC timestamp {created} · {size} bytes · Export…"));let c=config.clone();let weak=Rc::downgrade(&ui);b.connect_clicked(move |_|{let Some(ui)=weak.upgrade()else{return;};let picker=gtk::FileDialog::builder().title("Export recovery version").initial_name(format!("recovered-{id}")).build();let c=c.clone();let weak=Rc::downgrade(&ui);picker.save(Some(&ui.window),gio::Cancellable::NONE,move |result|{if let Ok(file)=result&&let Some(target)=file.path(){let state=nyx_core::paths::state_dir();worker::run(move ||Engine::open(&state,c)?.export_version(id,&target),move |result|{if let Some(ui)=weak.upgrade(){match result{Ok(())=>ui.message("Recovery copy exported"),Err(e)=>ui.message(&format!("Recovery export: {e:#}"))}}});}});});list.append(&b);}}}});});
         dialog.add_button("Close", gtk::ResponseType::Close);
         dialog.connect_response(|d, _| d.close());
         dialog.present();

@@ -1,8 +1,8 @@
-id = "nixe-notes"
+id = "nyx-notes"
 name = "Notes"
 version = "0.5.0"
 api_version = 1
-exec = ["./nixe-notes-glimpse"]
+exec = ["./nyx-notes-glimpse"]
 capabilities = ["search", "commands"]
 description = "Search explicitly exported local Notes vaults. note QUERY, note new TITLE, note append QUERY, and note heading QUERY. Notes must enable its local export; enable this plugin in Glimpse."
 [permissions]

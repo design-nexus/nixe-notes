@@ -35,7 +35,7 @@ mod writing;
 use crate::{prefs, worker};
 use anyhow::Context;
 use gtk::{gdk, gio, glib, prelude::*};
-use nixe_ui::{chrome, commandbar::CommandBar, inspector::Inspector, widgets};
+use nyx_ui::{chrome, commandbar::CommandBar, inspector::Inspector, widgets};
 use notes_editor::Editor;
 use notes_vault::{self as vault, Draft, Loaded, Version};
 use sourceview5::prelude::*;
@@ -158,7 +158,7 @@ pub fn launcher_action(
     let guard = app.hold();
     let app = app.clone();
     let root = action.vault.clone();
-    let db = nixe_core::paths::data_dir().join("glimpse/launcher.sqlite");
+    let db = nyx_core::paths::data_dir().join("glimpse/launcher.sqlite");
     worker::run(
         move || {
             vault::integrations::launcher_vaults(&db).and_then(|roots| {
@@ -193,7 +193,7 @@ pub fn launcher_action(
 pub fn integration_tools() -> serde_json::Value {
     integrations_ui::tools()
 }
-pub fn integration_call(name: &str, args: serde_json::Value, reply: nixe_core::control::Reply) {
+pub fn integration_call(name: &str, args: serde_json::Value, reply: nyx_core::control::Reply) {
     integrations_ui::call(name, args, reply);
 }
 fn current_ui() -> Option<Rc<Ui>> {
@@ -222,7 +222,7 @@ pub fn present(app: &gtk::Application, vault_path: Option<PathBuf>, files: Vec<P
         ui.window.present();
         return;
     }
-    nixe_theme::install(nixe_theme::Style {
+    nyx_theme::install(nyx_theme::Style {
         window_class: "notes-window",
         base_skip: &[],
         css: include_str!("style.css"),
@@ -230,7 +230,7 @@ pub fn present(app: &gtk::Application, vault_path: Option<PathBuf>, files: Vec<P
         extra_colors: None,
         prefs: || {
             let p = prefs::get();
-            nixe_theme::ThemePrefs {
+            nyx_theme::ThemePrefs {
                 mode: p.mode,
                 theme: p.theme,
                 glow: p.glow,
@@ -261,7 +261,7 @@ pub fn present(app: &gtk::Application, vault_path: Option<PathBuf>, files: Vec<P
     if prefs::take_broken() {
         ui.message("Settings could not be read. The previous file was kept as settings.toml.bak.");
     }
-    let state = nixe_core::paths::state_dir();
+    let state = nyx_core::paths::state_dir();
     let weak = Rc::downgrade(&ui);
     worker::run(
         move || vault::recovery_paths(&state),
@@ -275,7 +275,7 @@ pub fn present(app: &gtk::Application, vault_path: Option<PathBuf>, files: Vec<P
             }
         },
     );
-    let state = nixe_core::paths::state_dir();
+    let state = nyx_core::paths::state_dir();
     let weak = Rc::downgrade(&ui);
     worker::run(
         move || vault::workspace::interrupted_moves(&state),
@@ -295,11 +295,11 @@ impl Ui {
             .default_height(800)
             .build();
         window.add_css_class("notes-window");
-        window.set_icon_name(Some("io.github.design_nexus.nixe.Notes"));
+        window.set_icon_name(Some("io.github.design_nexus.nyx.Notes"));
         window.set_titlebar(Some(&gtk::Box::new(gtk::Orientation::Horizontal, 0)));
-        nixe_ui::keys::install(
+        nyx_ui::keys::install(
             &window,
-            nixe_ui::keys::Common {
+            nyx_ui::keys::Common {
                 settings: Some(settings),
                 shortcuts: Some(shortcuts),
                 ..Default::default()
@@ -532,7 +532,7 @@ Your Markdown files stay where they are.",
             editor_split,
             active_pane: Cell::new(false),
             pending_cursors: RefCell::new(std::collections::HashMap::new()),
-            pending_panes: RefCell::new(if nixe_theme::reopens_last_page() {
+            pending_panes: RefCell::new(if nyx_theme::reopens_last_page() {
                 let p = prefs::get();
                 p.open_files
                     .iter()
@@ -913,7 +913,7 @@ Your Markdown files stay where they are.",
                     if prefs::get().focus_mode {
                         ui.toggle_focus();
                     }
-                    nixe_ui::settings_card::escape();
+                    nyx_ui::settings_card::escape();
                     ui.find_row.set_visible(false);
                     ui.search.set_visible(false);
                     ui.inspector.escape();
@@ -932,7 +932,7 @@ Your Markdown files stay where they are.",
             glib::ControlFlow::Continue
         });
         let weak = Rc::downgrade(&ui);
-        nixe_theme::subscribe(&ui.window, move || {
+        nyx_theme::subscribe(&ui.window, move || {
             if let Some(ui) = weak.upgrade() {
                 ui.apply_typography();
             }
@@ -983,7 +983,7 @@ Your Markdown files stay where they are.",
         self.notice_row.set_visible(true);
     }
     fn fit(&self) {
-        nixe_ui::settings_card::fit(&self.window);
+        nyx_ui::settings_card::fit(&self.window);
         let width = if self.window.width() > 0 {
             self.window.width()
         } else {
@@ -1059,12 +1059,12 @@ Your Markdown files stay where they are.",
                         ui.generation.set(ui.generation.get() + 1);
                         *ui.root.borrow_mut() = Some(root.clone());
                         ui.monitors.borrow_mut().clear();
-                        let id = vault::draft_path(&nixe_core::paths::cache_dir(), &root)
+                        let id = vault::draft_path(&nyx_core::paths::cache_dir(), &root)
                             .file_stem()
                             .unwrap()
                             .to_os_string();
                         *ui.db.borrow_mut() = Some(
-                            nixe_core::paths::cache_dir()
+                            nyx_core::paths::cache_dir()
                                 .join(id)
                                 .with_extension("sqlite"),
                         );
@@ -1389,7 +1389,7 @@ Your Markdown files stay where they are.",
             return;
         }
         self.opening.borrow_mut().push(path.clone());
-        let state = nixe_core::paths::state_dir();
+        let state = nyx_core::paths::state_dir();
         let requested = path.clone();
         let weak = Rc::downgrade(self);
         worker::run(
@@ -1613,7 +1613,7 @@ Your Markdown files stay where they are.",
         if doc.recovery_pending.get() {
             return;
         }
-        let state = nixe_core::paths::state_dir();
+        let state = nyx_core::paths::state_dir();
         let draft = self.draft(doc);
         let weak = Rc::downgrade(self);
         worker::run(
@@ -1626,7 +1626,7 @@ Your Markdown files stay where they are.",
         );
     }
     fn remove_recovery(self: &Rc<Self>, path: PathBuf) {
-        let state = nixe_core::paths::state_dir();
+        let state = nyx_core::paths::state_dir();
         let weak = Rc::downgrade(self);
         worker::run(
             move || vault::remove_draft(&state, &path),
@@ -1671,7 +1671,7 @@ Your Markdown files stay where they are.",
         let draft = self.draft(&doc);
         let expected = doc.version.borrow().clone();
         let history_prefs = prefs::get();
-        let state = nixe_core::paths::state_dir();
+        let state = nyx_core::paths::state_dir();
         let weak = Rc::downgrade(self);
         worker::run(
             move || {
@@ -2049,7 +2049,7 @@ Your Markdown files stay where they are.",
                     gtk::ResponseType::Other(1)=>{
                         let documents=ui.docs.borrow().iter().filter(|d|d.dirty.get()).cloned().collect::<Vec<_>>();
                         let snapshots=documents.iter().map(|d|(d.clone(),d.editor.revision.get())).collect::<Vec<_>>();
-                        let drafts=documents.iter().map(|d|ui.draft(d)).collect::<Vec<_>>();let state=nixe_core::paths::state_dir();let weak=Rc::downgrade(&ui);ui.close_wait.set(true);
+                        let drafts=documents.iter().map(|d|ui.draft(d)).collect::<Vec<_>>();let state=nyx_core::paths::state_dir();let weak=Rc::downgrade(&ui);ui.close_wait.set(true);
                         worker::run(move ||->anyhow::Result<()>{for draft in drafts{vault::write_draft(&state,&draft)?;}Ok(())},move |result|{if let Some(ui)=weak.upgrade(){ui.close_wait.set(false);match result{Ok(()) if snapshots.iter().all(|(d,r)|d.editor.revision.get()==*r)=>ui.finish_close(),Ok(())=>ui.close_window(),Err(e)=>{ui.closing.set(false);ui.message(&format!("Could not preserve recovery drafts: {e:#}. Notes remains open."));}}}});
                     }
                     gtk::ResponseType::Accept=>ui.save_all_then_close(),
@@ -2544,7 +2544,7 @@ Your Markdown files stay where they are.",
         let p = prefs::get();
         let family = p.font_family.replace(['"', '\\', '\n', '\r'], "");
         self.css.load_from_string(&format!("window.notes-window textview.notes-editor, window.notes-window .notes-reader {{font-family: \"{family}\", monospace; font-size: {}pt;}}",p.font_size.clamp(8.0,32.0)));
-        let palette = nixe_theme::palette();
+        let palette = nyx_theme::palette();
         for doc in self.docs.borrow().iter() {
             doc.editor.set_writing_width(p.writing_width);
             doc.editor
@@ -3035,8 +3035,8 @@ mod tests {
                 .find(|e| e.label().as_deref() == Some(name))
         }
         gtk::init().unwrap();
-        nixe_core::app::init(nixe_core::app::App {
-            slug: "nixe-notes",
+        nyx_core::app::init(nyx_core::app::App {
+            slug: "nyx-notes",
             name: "Notes",
         });
         prefs::update(|p| {
@@ -3051,7 +3051,7 @@ mod tests {
         let first = first.path().canonicalize().unwrap();
         let second = second.path().canonicalize().unwrap();
         let app = gtk::Application::builder()
-            .application_id("io.github.design_nexus.nixe.Notes.FoldersTest")
+            .application_id("io.github.design_nexus.nyx.Notes.FoldersTest")
             .build();
         app.register(gio::Cancellable::NONE).unwrap();
         present(&app, Some(first.clone()), Vec::new());
@@ -3074,7 +3074,7 @@ mod tests {
         let saved = prefs::get().expanded_folders;
         assert!(saved[&first].contains(std::path::Path::new("Research/Nested")));
         assert!(
-            std::fs::read_to_string(nixe_core::paths::prefs_file())
+            std::fs::read_to_string(nyx_core::paths::prefs_file())
                 .unwrap()
                 .contains("expanded_folders")
         );
@@ -3118,8 +3118,8 @@ mod tests {
                 .emit_clicked();
         }
         gtk::init().unwrap();
-        nixe_core::app::init(nixe_core::app::App {
-            slug: "nixe-notes",
+        nyx_core::app::init(nyx_core::app::App {
+            slug: "nyx-notes",
             name: "Notes",
         });
         prefs::update(|p| {
@@ -3132,7 +3132,7 @@ mod tests {
         let path = root.join("Project Ideas.md");
         std::fs::write(&path, "# Ideas\n").unwrap();
         let app = gtk::Application::builder()
-            .application_id("io.github.design_nexus.nixe.Notes.InteractionTest")
+            .application_id("io.github.design_nexus.nyx.Notes.InteractionTest")
             .build();
         app.register(gio::Cancellable::NONE).unwrap();
         present(&app, Some(root.clone()), vec![path.clone()]);
@@ -3226,19 +3226,19 @@ mod tests {
     #[ignore = "requires an isolated GTK display and XDG directories"]
     fn settings_and_saved_vault() {
         gtk::init().unwrap();
-        nixe_core::app::init(nixe_core::app::App {
-            slug: "nixe-notes",
+        nyx_core::app::init(nyx_core::app::App {
+            slug: "nyx-notes",
             name: "Notes",
         });
         let vault = tempfile::tempdir().unwrap();
         let root = vault.path().canonicalize().unwrap();
         prefs::update(|p| {
             p.last_vault = None;
-            p.mode = nixe_theme::ThemeMode::Theme;
+            p.mode = nyx_theme::ThemeMode::Theme;
             p.restore_tabs = false;
         });
         let app = gtk::Application::builder()
-            .application_id("io.github.design_nexus.nixe.Notes.SettingsTest")
+            .application_id("io.github.design_nexus.nyx.Notes.SettingsTest")
             .build();
         app.register(gio::Cancellable::NONE).unwrap();
         present(&app, Some(root.clone()), Vec::new());
@@ -3247,7 +3247,7 @@ mod tests {
         ui.window.set_default_size(800, 700);
         pump_until(|| ui.window.width() == 800);
         ui.settings();
-        let page = nixe_ui::settings_card::page().unwrap();
+        let page = nyx_ui::settings_card::page().unwrap();
         pump_until(|| page.is_mapped() && page.height() > 200);
         let theme = descendants(&page)
             .into_iter()
@@ -3255,15 +3255,15 @@ mod tests {
             .find(|w| w.widget_name() == "notes-theme")
             .unwrap();
         pump_until(|| theme.is_mapped() && theme.height() > 0);
-        let themes = nixe_theme::all();
+        let themes = nyx_theme::all();
         let other = themes
             .iter()
             .position(|t| t.id != prefs::get().theme)
             .unwrap();
         theme.set_selected(other as u32);
         assert_eq!(prefs::get().theme, themes[other].id);
-        assert_eq!(prefs::get().mode, nixe_theme::ThemeMode::Theme);
-        nixe_ui::settings_card::select("Editor");
+        assert_eq!(prefs::get().mode, nyx_theme::ThemeMode::Theme);
+        nyx_ui::settings_card::select("Editor");
         let size = descendants(&page)
             .into_iter()
             .filter_map(|w| w.downcast::<gtk::SpinButton>().ok())
@@ -3272,7 +3272,7 @@ mod tests {
         pump_until(|| size.is_mapped() && size.height() > 0);
         size.set_value(15.0);
         assert_eq!(prefs::get().font_size, 15.0);
-        nixe_ui::settings_card::select("Vault");
+        nyx_ui::settings_card::select("Vault");
         let location = descendants(&page)
             .into_iter()
             .filter_map(|w| w.downcast::<gtk::Label>().ok())
@@ -3297,7 +3297,7 @@ mod tests {
         apply.emit_clicked();
         assert_eq!(prefs::get().attachments_folder, "Images");
         for group in ["Writing", "Integrations"] {
-            nixe_ui::settings_card::select(group);
+            nyx_ui::settings_card::select(group);
             pump_until(|| {
                 descendants(&page)
                     .into_iter()
@@ -3308,7 +3308,7 @@ mod tests {
         prefs::reload();
         assert_eq!(prefs::get().last_vault, Some(root.clone()));
         assert_eq!(prefs::get().font_size, 15.0);
-        nixe_ui::settings_card::close();
+        nyx_ui::settings_card::close();
         ui.allow_close.set(true);
         ui.window.destroy();
         UI.with(|s| s.borrow_mut().take());
@@ -3335,8 +3335,8 @@ mod tests {
     #[ignore = "requires an isolated GTK display and XDG directories"]
     fn vault_connection_sidebar_and_resolve() {
         gtk::init().unwrap();
-        nixe_core::app::init(nixe_core::app::App {
-            slug: "nixe-notes",
+        nyx_core::app::init(nyx_core::app::App {
+            slug: "nyx-notes",
             name: "Notes",
         });
         prefs::update(|p| {
@@ -3346,7 +3346,7 @@ mod tests {
             p.focus_mode = false;
         });
         let app = gtk::Application::builder()
-            .application_id("io.github.design_nexus.nixe.Notes.ConnectionTest")
+            .application_id("io.github.design_nexus.nyx.Notes.ConnectionTest")
             .build();
         app.register(gio::Cancellable::NONE).unwrap();
         present(&app, None, Vec::new());
@@ -3416,7 +3416,7 @@ mod tests {
             .editor
             .clone();
         let gutter = sourceview5::prelude::ViewExt::gutter(&editor.view, gtk::TextWindowType::Left);
-        let expected = gdk::RGBA::parse(nixe_theme::palette().dim_text).unwrap();
+        let expected = gdk::RGBA::parse(nyx_theme::palette().dim_text).unwrap();
         pump_until(|| gutter.color() == expected);
 
         let doc = ui
@@ -3468,8 +3468,8 @@ mod tests {
     #[ignore = "requires an isolated GTK display and XDG directories"]
     fn vault_editor_save_and_conflict() {
         gtk::init().unwrap();
-        nixe_core::app::init(nixe_core::app::App {
-            slug: "nixe-notes",
+        nyx_core::app::init(nyx_core::app::App {
+            slug: "nyx-notes",
             name: "Notes",
         });
         let temp = tempfile::tempdir().unwrap();
@@ -3493,7 +3493,7 @@ mod tests {
         .unwrap();
         std::fs::write(temp.path().join("Embed.md"),"# Embedded note\n\n**Rendered text**\n\n![pixel](Attachments/pixel.png)\n\n> [!note] Native callout\n> Body\n").unwrap();
         let app = gtk::Application::builder()
-            .application_id("io.github.design_nexus.nixe.Notes.Test")
+            .application_id("io.github.design_nexus.nyx.Notes.Test")
             .build();
         app.register(gio::Cancellable::NONE).unwrap();
         present(&app, Some(temp.path().to_owned()), vec![path.clone()]);
@@ -3577,7 +3577,7 @@ mod tests {
                 .ends_with("Edited in Notes")
         );
         assert!(
-            vault::history::list(&nixe_core::paths::state_dir(), &path)
+            vault::history::list(&nyx_core::paths::state_dir(), &path)
                 .unwrap()
                 .len()
                 >= 2
@@ -3594,13 +3594,13 @@ mod tests {
         pump_until(|| doc.conflict.get() && !doc.saving.get());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "external version");
         pump_until(|| {
-            vault::read_draft(&nixe_core::paths::state_dir(), &path)
+            vault::read_draft(&nyx_core::paths::state_dir(), &path)
                 .unwrap()
                 .is_some()
         });
         ui.settings();
-        assert!(nixe_ui::settings_card::is_open());
-        nixe_ui::settings_card::close();
+        assert!(nyx_ui::settings_card::is_open());
+        nyx_ui::settings_card::close();
         ui.allow_close.set(true);
         ui.window.destroy();
         UI.with(|s| s.borrow_mut().take());

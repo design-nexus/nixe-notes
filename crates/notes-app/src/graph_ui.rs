@@ -191,7 +191,7 @@ impl Ui {
         let group_draw = grouped.clone();
         let label_draw = labels.clone();
         area.set_draw_func(move |_, cr, w, h| {
-            let p = nixe_theme::palette();
+            let p = nyx_theme::palette();
             views::color(cr, &p.bg, 1.0);
             let _ = cr.paint();
             let c = c.get();
@@ -344,7 +344,7 @@ impl Ui {
             glib::Propagation::Proceed
         });
         let weak = area.downgrade();
-        nixe_theme::subscribe(&area, move || {
+        nyx_theme::subscribe(&area, move || {
             if let Some(a) = weak.upgrade() {
                 a.queue_draw();
             }

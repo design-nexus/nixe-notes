@@ -1,6 +1,6 @@
 //! Account-backed, append-only Markdown revisions. No tokens enter Notes.
 use super::*;
-use nixe_cloud::{Client, SetupSession};
+use nyx_cloud::{Client, SetupSession};
 use serde_json::json;
 #[derive(Clone, Debug, Deserialize)]
 struct Revision {
@@ -171,8 +171,8 @@ mod tests {
     #[test]
     #[ignore = "requires the isolated Cloud accounts fixture"]
     fn cloud_account_transport() {
-        let id = std::env::var("NIXE_CLOUD_TEST_ID").unwrap();
-        let root = PathBuf::from(std::env::var("NIXE_NOTES_TEST_ROOT").unwrap());
+        let id = std::env::var("NYX_CLOUD_TEST_ID").unwrap();
+        let root = PathBuf::from(std::env::var("NYX_NOTES_TEST_ROOT").unwrap());
         let state = tempfile::tempdir().unwrap();
         let config = Config {
             root: root.clone(),

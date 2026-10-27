@@ -48,10 +48,10 @@ impl Default for Assistant {
                     .unwrap_or_else(|| {
                         PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".cache")
                     })
-                    .join("nixe-assistant/runtime")
+                    .join("nyx-assistant/runtime")
             });
         Self {
-            socket: base.join("nixe-assistant/assistant.sock"),
+            socket: base.join("nyx-assistant/assistant.sock"),
         }
     }
 }

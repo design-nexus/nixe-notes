@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix="notes-gtk-") as scratch:
                 time.sleep(0.02)
         profile = ["--release"] if os.environ.get("NOTES_TEST_RELEASE") == "1" else []
         selected = [os.environ["NOTES_GTK_FILTER"]] if os.environ.get("NOTES_GTK_FILTER") else []
-        packages = ["-p", os.environ["NOTES_GTK_PACKAGE"]] if os.environ.get("NOTES_GTK_PACKAGE") else ["-p", "nixe-notes", "-p", "notes-editor"]
+        packages = ["-p", os.environ["NOTES_GTK_PACKAGE"]] if os.environ.get("NOTES_GTK_PACKAGE") else ["-p", "nyx-notes", "-p", "notes-editor"]
         cargo = ["dbus-run-session", "--", "cargo", "test", "--locked", *packages, *profile, *selected, "--"]
         listed = subprocess.run([*cargo, "--ignored", "--list"], cwd=root, env=env, check=True,
                                 capture_output=True, text=True)

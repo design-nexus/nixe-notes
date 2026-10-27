@@ -94,7 +94,7 @@ impl CanvasView {
         let version = self.version.borrow().clone();
         let path = self.path.clone();
         let bom = self.bom.get();
-        let state = nixe_core::paths::state_dir();
+        let state = nyx_core::paths::state_dir();
         let weak = Rc::downgrade(self);
         worker::run(
             move || -> anyhow::Result<()> {
@@ -135,7 +135,7 @@ impl CanvasView {
         let root = self.root.clone();
         let path = self.path.clone();
         let bom = self.bom.get();
-        let state = nixe_core::paths::state_dir();
+        let state = nyx_core::paths::state_dir();
         let p = prefs::get();
         let weak = Rc::downgrade(self);
         worker::run(
@@ -180,7 +180,7 @@ impl CanvasView {
                             view.status.set_text(
                                 "Saved · scroll to zoom · middle-drag to pan · drag cards to move",
                             );
-                            let state = nixe_core::paths::state_dir();
+                            let state = nyx_core::paths::state_dir();
                             let path = view.path.clone();
                             worker::run(move || vault::remove_draft(&state, &path), |_| {});
                         } else {
@@ -602,7 +602,7 @@ impl CanvasView {
             {
                 let root = view.root.clone();
                 let path = view.path.clone();
-                let state = nixe_core::paths::state_dir();
+                let state = nyx_core::paths::state_dir();
                 let weak = Rc::downgrade(&view);
                 worker::run(
                     move || -> anyhow::Result<_> {
@@ -698,7 +698,7 @@ impl CanvasView {
         glib::Propagation::Stop
     }
     fn draw(&self, cr: &gtk::cairo::Context, w: i32, h: i32) {
-        let palette = nixe_theme::palette();
+        let palette = nyx_theme::palette();
         views::color(cr, &palette.bg, 1.0);
         let _ = cr.paint();
         let camera = self.camera.get();
@@ -968,7 +968,7 @@ impl Ui {
         self.opening.borrow_mut().push(path.clone());
         let requested = path.clone();
         let r = root.clone();
-        let state = nixe_core::paths::state_dir();
+        let state = nyx_core::paths::state_dir();
         let weak = Rc::downgrade(self);
         worker::run(
             move || -> anyhow::Result<_> {
@@ -1305,7 +1305,7 @@ impl Ui {
             }
         });
         let weak = area.downgrade();
-        nixe_theme::subscribe(&area, move || {
+        nyx_theme::subscribe(&area, move || {
             if let Some(a) = weak.upgrade() {
                 a.queue_draw();
             }

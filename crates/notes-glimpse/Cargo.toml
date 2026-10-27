@@ -1,5 +1,5 @@
 [package]
-name = "nixe-notes-glimpse"
+name = "nyx-notes-glimpse"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -7,4 +7,4 @@ license.workspace = true
 notes-vault = { path = "../notes-vault" }
 serde_json.workspace = true
 anyhow.workspace = true
-glimpse-plugin-sdk = { git = "https://github.com/design-nexus/nixe-glimpse.git", rev = "e60055b3b10793646b07bcb8b403ef1c67cdfd01" }
+glimpse-plugin-sdk = { git = "https://github.com/design-nexus/nyx-glimpse.git", rev = "6f9f7325259bb05c2bc6a5eb1920ce6caed7aa82" }

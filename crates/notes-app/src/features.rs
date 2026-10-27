@@ -834,7 +834,7 @@ impl Ui {
                 let Some(db) = ui.db.borrow().clone() else {
                     return;
                 };
-                let state = nixe_core::paths::state_dir();
+                let state = nyx_core::paths::state_dir();
                 let weak = Rc::downgrade(&ui);
                 worker::run(
                     move || workspace::plan_move(&root, &db, &state, &source, &destination),
@@ -914,7 +914,7 @@ impl Ui {
         );
     }
     pub(super) fn recover_operations(self: &Rc<Self>) {
-        let state = nixe_core::paths::state_dir();
+        let state = nyx_core::paths::state_dir();
         let weak = Rc::downgrade(self);
         worker::run(
             move || workspace::interrupted_moves(&state),

@@ -659,7 +659,7 @@ impl Ui {
         let Some(root) = self.root.borrow().clone() else {
             return;
         };
-        let state = nixe_core::paths::state_dir();
+        let state = nyx_core::paths::state_dir();
         let db = self.db.borrow().clone();
         let p = prefs::get();
         let weak = Rc::downgrade(self);

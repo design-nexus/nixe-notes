@@ -1,5 +1,5 @@
 [package]
-name = "nixe-notes"
+name = "nyx-notes"
 version = "0.5.5"
 description = "A native, local-first Markdown writing workspace"
 edition.workspace = true
@@ -9,9 +9,9 @@ repository.workspace = true
 [dependencies]
 gtk.workspace = true
 sourceview5.workspace = true
-nixe-core.workspace = true
-nixe-ui.workspace = true
-nixe-theme.workspace = true
+nyx-core.workspace = true
+nyx-ui.workspace = true
+nyx-theme.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

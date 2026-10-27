@@ -5,16 +5,16 @@ use gtk::{gio, glib, prelude::*};
 fn main() -> glib::ExitCode {
     if std::env::args().any(|a| a == "--help" || a == "-h") {
         println!(
-            "Notes — native Markdown workspace\nUsage: nixe-notes [--vault DIRECTORY] [FILE]\n       nixe-notes --version"
+            "Notes — native Markdown workspace\nUsage: nyx-notes [--vault DIRECTORY] [FILE]\n       nyx-notes --version"
         );
         return glib::ExitCode::SUCCESS;
     }
     if std::env::args().any(|a| a == "--version") {
-        println!("nixe-notes {}", env!("CARGO_PKG_VERSION"));
+        println!("nyx-notes {}", env!("CARGO_PKG_VERSION"));
         return glib::ExitCode::SUCCESS;
     }
-    nixe_core::app::init(nixe_core::app::App {
-        slug: "nixe-notes",
+    nyx_core::app::init(nyx_core::app::App {
+        slug: "nyx-notes",
         name: "Notes",
     });
     if std::env::var_os("GSK_RENDERER").is_none() {
@@ -22,11 +22,11 @@ fn main() -> glib::ExitCode {
         unsafe { std::env::set_var("GSK_RENDERER", "ngl") };
     }
     let app = gtk::Application::builder()
-        .application_id("io.github.design_nexus.nixe.Notes")
+        .application_id("io.github.design_nexus.nyx.Notes")
         .flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE)
         .build();
     app.connect_startup(|app| {
-        nixe_core::control::serve_async(app, window::integration_tools(), window::integration_call)
+        nyx_core::control::serve_async(app, window::integration_tools(), window::integration_call)
     });
     app.connect_command_line(|app, line| {
         let args = line.arguments();

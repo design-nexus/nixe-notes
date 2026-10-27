@@ -2,8 +2,8 @@
   "application": "notes",
   "directory": ".",
   "packages": [
-    "nixe-notes",
-    "nixe-notes-glimpse"
+    "nyx-notes",
+    "nyx-notes-glimpse"
   ],
   "manifest": "Cargo.toml",
   "prepare": [],
@@ -14,9 +14,9 @@
       "test",
       "--locked",
       "-p",
-      "nixe-notes",
+      "nyx-notes",
       "-p",
-      "nixe-notes-glimpse"
+      "nyx-notes-glimpse"
     ]
   ]
 }

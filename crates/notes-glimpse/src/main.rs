@@ -84,7 +84,7 @@ fn main() {
         match request.op.as_str() {
             "search" => search(
                 request.args["query"].as_str().unwrap_or_default(),
-                std::env::var_os("NIXE_NOTES_INDEX").map(PathBuf::from),
+                std::env::var_os("NYX_NOTES_INDEX").map(PathBuf::from),
             ),
             "activate" => anyhow::bail!("Update Glimpse to use the Notes host-action integration"),
             _ => Ok(Value::Null),

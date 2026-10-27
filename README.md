@@ -1,11 +1,11 @@
 # Notes
 
-A native Rust/GTK4 Markdown workspace for Linux and the Nixe suite. Notes opens ordinary Markdown directories and existing Obsidian vaults directly. MIT licensed. Phases 1–5 writing, knowledge, optional local integrations, personal synchronization, and isolated extension commands are implemented. See the [implementation status and limits](PLAN.md).
+A native Rust/GTK4 Markdown workspace for Linux and the Nyx suite. Notes opens ordinary Markdown directories and existing Obsidian vaults directly. MIT licensed. Phases 1–5 writing, knowledge, optional local integrations, personal synchronization, and isolated extension commands are implemented. See the [implementation status and limits](PLAN.md).
 
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/design-nexus/nixe-notes/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/design-nexus/nyx-notes/main/install.sh | bash
 ```
 
 ## Available now
@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/design-nexus/nixe-notes/main/instal
 - File attachments through the picker or drag/drop, clipboard image insertion, native image previews, and explicit attachment opening. Existing attachment names are never overwritten.
 - Reviewed rename/move operations update affected source link ranges and retain recovery journals. Duplicate files/folders or move them to the desktop trash through explorer actions.
 - Explicit save, autosave, recovery drafts, external modification checks, conflict comparison, and atomic save-copy without overwriting existing files.
-- Shared Nixe controls and Inspector, configurable typography/writing width, light/dark palettes, and automatic Omarchy theme following.
+- Shared Nyx controls and Inspector, configurable typography/writing width, light/dark palettes, and automatic Omarchy theme following.
 
 Phase 3 is available through the File menu:
 
@@ -32,7 +32,7 @@ Phase 3 is available through the File menu:
 
 Optional Phase 4 tools are also in File: local AI writing previews, vault questions, semantic/hybrid search, related notes/backlink suggestions, Capture insertion, web clipping, and suite integration preferences. Everything is off by default. Local models remain Assistant-owned; Notes never downloads models or automatically uploads a vault. Enable the bundled Notes plugin separately in Glimpse for `note QUERY`, `note new TITLE`, `note append QUERY`, and `note heading QUERY`.
 
-All AI/suite edits require visible review. See [integration contracts and setup](docs/INTEGRATIONS.md), including compatibility notes for already running Assistant/Glimpse processes. Notes remains usable when companions or models are absent; `cargo build --release --locked -p nixe-notes --no-default-features` omits AI, sync, and third-party execution entirely.
+All AI/suite edits require visible review. See [integration contracts and setup](docs/INTEGRATIONS.md), including compatibility notes for already running Assistant/Glimpse processes. Notes remains usable when companions or models are absent; `cargo build --release --locked -p nyx-notes --no-default-features` omits AI, sync, and third-party execution entirely.
 
 Phase 5 adds optional personal Nextcloud/WebDAV sync and isolated WASM processors. File → Personal sync stores app passwords in the desktop keyring, supports excluded folders, and runs in the background. Divergent edits and deletions require explicit conflict review; recovery versions include attachments. See [sync setup and limits](docs/SYNC.md). File → Extensions imports disabled packages, reviews explicit permissions, and exposes commands whose edits require native diff approval. See [extension API v1](docs/EXTENSIONS.md). Both capabilities are optional build features and remain inactive until configured.
 
@@ -45,17 +45,17 @@ Reading mode is a derived native view, not an HTML browser. Inline note/image em
 Requires Rust, GTK4 >= 4.18, and GtkSourceView 5. On Arch Linux the native packages are `gtk4` and `gtksourceview5`.
 
 ```sh
-cargo build --release --locked -p nixe-notes
+cargo build --release --locked -p nyx-notes
 ./install.sh
-nixe-notes --vault /path/to/vault
-nixe-notes /path/to/note.md
+nyx-notes --vault /path/to/vault
+nyx-notes /path/to/note.md
 ```
 
 On first launch, Connect a vault opens a setup popup. Browse or enter your existing vault folder, choose a Markdown file, or enter a new folder path and select Create folder. The welcome screen and File → Open vault reopen setup. The sidebar toggle and Ctrl+B can expand the explorer even when tiled to half-screen. Resolve is reserved for external file conflicts.
 
 The installer writes the binary to `~/.local/bin`, and the launcher and icon under `$XDG_DATA_HOME` (default `~/.local/share`). It does not start Notes, change default file associations, or modify desktop configuration. A checkout-based Arch package recipe is in `packaging/PKGBUILD`.
 
-Shared Nixe components are pinned Git dependencies. `STYLE.md` is a reference snapshot from nixe-design revision `609c1d2a5af41a8ee3b76ba23611eb30d95a4743`; update it alongside that dependency. The launcher icon reuses Nixe's canonical icon template.
+Shared Nyx components are pinned Git dependencies. `STYLE.md` is a reference snapshot from nyx-design revision `609c1d2a5af41a8ee3b76ba23611eb30d95a4743`; update it alongside that dependency. The launcher icon reuses Nyx's canonical icon template.
 
 ## Keyboard
 
@@ -86,7 +86,7 @@ Use the toolbar to enable split editing, then open or drag tabs into either pane
 
 ## Local state and checks
 
-Application preferences use `$XDG_CONFIG_HOME/nixe-notes`. Document history, recovery drafts, and file-operation journals use `$XDG_STATE_HOME/nixe-notes`, outside the vault. Search databases use `$XDG_CACHE_HOME/nixe-notes` and can be rebuilt. No account, cloud service, AI model, or Git installation is needed to use Notes.
+Application preferences use `$XDG_CONFIG_HOME/nyx-notes`. Document history, recovery drafts, and file-operation journals use `$XDG_STATE_HOME/nyx-notes`, outside the vault. Search databases use `$XDG_CACHE_HOME/nyx-notes` and can be rebuilt. No account, cloud service, AI model, or Git installation is needed to use Notes.
 
 ```sh
 cargo fmt --all -- --check

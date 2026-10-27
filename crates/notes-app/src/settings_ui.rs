@@ -1,4 +1,4 @@
-//! Shared Nixe settings card, rebuilt from current vault/preferences when opened.
+//! Shared Nyx settings card, rebuilt from current vault/preferences when opened.
 use super::*;
 type SettingsAction = fn(&Rc<Ui>);
 fn group(body: &gtk::Box, name: &str) -> gtk::Box {
@@ -57,28 +57,28 @@ impl Ui {
         let body = widgets::vbox(0);
         body.set_hexpand(true);
         let appearance = group(&body, "Appearance");
-        let available = nixe_theme::omarchy_available();
+        let available = nyx_theme::omarchy_available();
         let (row, follow) = widgets::switch_row(
             "Follow Omarchy theme",
             if available {
                 "Follow desktop theme changes automatically"
             } else {
-                "Use the saved Nixe theme until a desktop palette is available"
+                "Use the saved Nyx theme until a desktop palette is available"
             },
-            p.mode == nixe_theme::ThemeMode::Omarchy,
+            p.mode == nyx_theme::ThemeMode::Omarchy,
             |active| {
                 prefs::update(|p| {
                     p.mode = if active {
-                        nixe_theme::ThemeMode::Omarchy
+                        nyx_theme::ThemeMode::Omarchy
                     } else {
-                        nixe_theme::ThemeMode::Theme
+                        nyx_theme::ThemeMode::Theme
                     }
                 });
-                nixe_theme::apply();
+                nyx_theme::apply();
             },
         );
         appearance.append(&row);
-        let themes = nixe_theme::all();
+        let themes = nyx_theme::all();
         let options = themes
             .iter()
             .map(|t| (t.id.clone(), t.name.clone()))
@@ -100,14 +100,14 @@ impl Ui {
                 }
                 prefs::update(|p| {
                     p.theme = theme.id.clone();
-                    p.mode = nixe_theme::ThemeMode::Theme;
+                    p.mode = nyx_theme::ThemeMode::Theme;
                 });
-                nixe_theme::apply();
+                nyx_theme::apply();
             }
         });
         appearance.append(&widgets::row(
             "Theme",
-            "Bundled and custom Nixe themes, including light and dark palettes",
+            "Bundled and custom Nyx themes, including light and dark palettes",
             Some(dropdown.upcast_ref()),
         ));
         let (row, _) = widgets::switch_row(
@@ -116,14 +116,14 @@ impl Ui {
             p.reduce_motion,
             |value| {
                 prefs::update(|p| p.reduce_motion = value);
-                nixe_theme::apply();
+                nyx_theme::apply();
             },
         );
         appearance.append(&row);
         let (row, _) =
             widgets::switch_row("Glow", "Use the suite glow preference", p.glow, |value| {
                 prefs::update(|p| p.glow = value);
-                nixe_theme::apply();
+                nyx_theme::apply();
             });
         appearance.append(&row);
         appearance.append(&widgets::start_row());
@@ -239,7 +239,7 @@ impl Ui {
         let weak = Rc::downgrade(self);
         connect.connect_clicked(move |_| {
             if let Some(ui) = weak.upgrade() {
-                nixe_ui::settings_card::close();
+                nyx_ui::settings_card::close();
                 ui.choose_vault();
             }
         });
@@ -356,7 +356,7 @@ impl Ui {
             let weak = Rc::downgrade(self);
             button.connect_clicked(move |_| {
                 if let Some(ui) = weak.upgrade() {
-                    nixe_ui::settings_card::close();
+                    nyx_ui::settings_card::close();
                     action(&ui);
                 }
             });
@@ -365,10 +365,10 @@ impl Ui {
         let root = scroll(&body);
         root.set_vexpand(true);
         root.set_hexpand(true);
-        nixe_ui::settings_card::open_page(
+        nyx_ui::settings_card::open_page(
             &self.overlay,
             &self.window,
-            nixe_ui::settings_card::Spec {
+            nyx_ui::settings_card::Spec {
                 groups: GROUPS,
                 search_text: None,
             },

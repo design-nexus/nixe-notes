@@ -1,14 +1,14 @@
-# Nixe App Style
+# Nyx App Style
 
-How Nixe apps look and behave. Most of it is built into the shared crates, so a new
+How Nyx apps look and behave. Most of it is built into the shared crates, so a new
 app gets it by using them rather than by copying another app:
 
 | Crate | What it gives an app |
 | --- | --- |
-| `nixe-core` | Its identity (`app::init`), XDG paths, the preferences store (`prefs_store!`), running commands, atomic writes, moving files from old names (`migrate`) |
-| `nixe-theme` | Palettes, the bundled and user themes, Follow Omarchy, the suite-wide theme, the base stylesheet (`base.css`) |
-| `nixe-ui` | Widgets and option rows, the settings card, the window frame (`chrome`), the command bar and Inspector, the common keys |
-| `nixe-icons` | The app icons (`make_icons.py`) |
+| `nyx-core` | Its identity (`app::init`), XDG paths, the preferences store (`prefs_store!`), running commands, atomic writes, moving files from old names (`migrate`) |
+| `nyx-theme` | Palettes, the bundled and user themes, Follow Omarchy, the suite-wide theme, the base stylesheet (`base.css`) |
+| `nyx-ui` | Widgets and option rows, the settings card, the window frame (`chrome`), the command bar and Inspector, the common keys |
+| `nyx-icons` | The app icons (`make_icons.py`) |
 
 **Music** (`apps/music`) is the reference app with a sidebar, **Settings**
 (`apps/settings`) the reference for an app whose pages are all settings, and **Write**
@@ -16,7 +16,7 @@ app gets it by using them rather than by copying another app:
 covered here, do what they do.
 
 **Read the reference source before building or changing a layout.** Open Music's
-`src/window.rs` and the relevant shared `nixe-ui` widget and `nixe-theme/base.css`
+`src/window.rs` and the relevant shared `nyx-ui` widget and `nyx-theme/base.css`
 implementation. Copy the existing construction, sizing and resize behavior; do not
 approximate it from screenshots or invent another sidebar implementation. Contacts
 also demonstrates the corrected non-expanding navigation structure.
@@ -158,7 +158,7 @@ and map it:
 
 ### User themes
 
-Each user theme is one file in `~/.config/nixe/themes/<id>.toml` (offered in every
+Each user theme is one file in `~/.config/nyx/themes/<id>.toml` (offered in every
 app) or `~/.config/<app>/themes/<id>.toml` (this app only), with the same keys as a
 bundled theme plus a display name:
 
@@ -183,15 +183,15 @@ List user themes after the bundled ones, sorted by name, with ids `custom:<file 
 ### One theme for the suite
 
 The theme (`mode` and `theme`), density, text size and where apps open (`start`) live in
-`~/.config/nixe/theme.toml`. Picking a theme in any app writes it there, and every open
-app follows within a second (`nixe-theme` polls the file with Omarchy's). An app passes
-`set_theme` to `nixe_theme::install` so the shared choice lands in its own preferences.
+`~/.config/nyx/theme.toml`. Picking a theme in any app writes it there, and every open
+app follows within a second (`nyx-theme` polls the file with Omarchy's). An app passes
+`set_theme` to `nyx_theme::install` so the shared choice lands in its own preferences.
 
 **Open on:** every app opens on its start page (`start = "home"`, the default) unless
 the suite is set to reopen the page shown last (`start = "last"`). An app picks its
-first page with `nixe_theme::start_page(home, last)` and still saves the last page it
-showed. The choice is the **Open on** row (`nixe_ui::widgets::start_row`), in each
-app's window group and in Settings → Nixe apps.
+first page with `nyx_theme::start_page(home, last)` and still saves the last page it
+showed. The choice is the **Open on** row (`nyx_ui::widgets::start_row`), in each
+app's window group and in Settings → Nyx apps.
 
 ### Preferences (per app, `~/.config/<app>/settings.toml`)
 
@@ -270,7 +270,7 @@ that says what the option *does* for the user, not what it's called internally.
 
 - **Window:** `bg` everywhere. No title bar and no top bar: set an empty widget as the
   GTK titlebar. Default size 1120 × 800 (Notepad and Archive open floating, smaller;
-  their Hyprland rules are in `hypr/nixe.lua`, written by the installer). The frame is
+  their Hyprland rules are in `hypr/nyx.lua`, written by the installer). The frame is
   a vertical box: body (sidebar and page column), any app bar (a player bar), status
   bar. The window's overlay holds toasts and cards.
 - **Sidebar head** (`chrome::sidebar_head`): the first row of the sidebar holds the
@@ -319,8 +319,8 @@ that says what the option *does* for the user, not what it's called internally.
   <kbd>Ctrl</kbd>+<kbd>B</kbd> the sidebar, <kbd>Esc</kbd> clears or closes,
   <kbd>Ctrl</kbd>+<kbd>Q</kbd> quits, <kbd>Ctrl</kbd>+<kbd>W</kbd> closes the document
   or tab in document apps and the window elsewhere, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>
-  the palette (`nixe_ui::palette`: every page and named button in the window, so give
-  buttons tooltips with their keys, "Find (Ctrl+F)"). `nixe_ui::keys` adds any an app
+  the palette (`nyx_ui::palette`: every page and named button in the window, so give
+  buttons tooltips with their keys, "Find (Ctrl+F)"). `nyx_ui::keys` adds any an app
   doesn't handle itself.
 - **Deleting:** prefer doing it at once with an Undo toast (hide the item, delete when
   the toast has gone) to asking first. Keep a confirmation only for what can't come
@@ -421,7 +421,7 @@ striping, no row dividers, no rounded corners; hover `@row_hover`, selected
 `@nav_active`. Reset the header button's font size to `1em` before sizing its label,
 or GTK's own smaller size compounds.
 
-**Settings card** (`nixe_ui::settings_card`; the app's `settings_dialog.rs` passes its
+**Settings card** (`nyx_ui::settings_card`; the app's `settings_dialog.rs` passes its
 group table and settings page): a card over the window on a `@veil` backdrop,
 up to 1040 × 720 and 24 px clear of the window edges, radius 14, hairline border.
 - Left column (280 px; 200 px when the card is under 900 px wide): `SETTINGS`, a
@@ -481,7 +481,7 @@ same way (Fonts' `show_shortcuts` is the template):
 hairline border. Gridlines are `border` at 0.3–0.45 alpha, axis labels 11 px
 `dim_text`, the line 2.5 px `accent` with a 0.14-alpha fill below it.
 
-**Command bar** (`nixe_ui::commandbar`): one 44 px row of icons with a hairline below,
+**Command bar** (`nyx_ui::commandbar`): one 44 px row of icons with a hairline below,
 holding what each editor uses most: the File menu, undo and redo (`lead`), then groups
 (`group(priority)`) of 30 px icon tools, `dim_text` at rest, `text` on hover, `accent`
 on `nav_active` when on. Groups are split by 18 px dividers with 6 px either side. A
@@ -494,7 +494,7 @@ The bar never wraps: when it runs out of room whole groups fold into the `⋯` m
 least important first, where each tool shows its name and keys; tools added with
 `more` always live there.
 
-**Inspector** (`nixe_ui::inspector`): a 288 px panel at the document's right, in
+**Inspector** (`nyx_ui::inspector`): a 288 px panel at the document's right, in
 `theme_surface`, with the formatting for what's selected. A segmented switch at its top
 picks a segment (Write: Text · Page · Review); contextual segments (Picture, Drawing,
 Object) appear in `accent` and are picked while something matching is selected. Each
@@ -507,7 +507,7 @@ it carry a label beside their swatch. <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>I</kbd
 shows and hides it, per editor (`inspector` in the settings: open by default, closed in
 Sheets). The palette opens it at the segment of the control it presses.
 
-**App icons** (`nixe-icons`): a 128 px canvas with a 112 px tile at 8, radius 26, in a
+**App icons** (`nyx-icons`): a 128 px canvas with a 112 px tile at 8, radius 26, in a
 diagonal `#2a2f45` → `#16182a` gradient with a `#7aa2f7` hairline at 0.4 opacity. The
 glyph is drawn in 6 px round-capped lines in a `#7aa2f7` → `#c58bd6` gradient inside
 the 32–96 square, one idea per app. Add a glyph to `make_icons.py` and run it.

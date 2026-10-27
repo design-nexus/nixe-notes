@@ -4,7 +4,7 @@ mod webdav;
 use anyhow::{Context, Result, bail, ensure};
 pub use cloud::{CloudRemote, online_profiles};
 use gio::prelude::*;
-pub use nixe_sync::{Secret, delay, lookup_secret, store_secret};
+pub use nyx_sync::{Secret, delay, lookup_secret, store_secret};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -526,7 +526,7 @@ impl Engine {
             (Some(old), None) => {
                 // Move, inspect, then discard the archived version. Never unlink a newly-created replacement.
                 let holder = tempfile::Builder::new()
-                    .prefix(".nixe-sync-")
+                    .prefix(".nyx-sync-")
                     .tempdir_in(full.parent().unwrap())?;
                 let retained = holder.path().join("retained");
                 rustix::fs::renameat_with(

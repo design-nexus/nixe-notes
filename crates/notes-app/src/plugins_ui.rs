@@ -2,7 +2,7 @@
 use super::*;
 use notes_plugins::{Grant, Package};
 fn storage() -> PathBuf {
-    nixe_core::paths::data_dir().join("extensions")
+    nyx_core::paths::data_dir().join("extensions")
 }
 fn grants() -> Vec<Grant> {
     prefs::get()

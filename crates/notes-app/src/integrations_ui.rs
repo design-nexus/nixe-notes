@@ -1,6 +1,6 @@
 //! Public suite control surface. Optional permissions and human review guard note changes.
 use super::*;
-use nixe_core::control::Reply;
+use nyx_core::control::Reply;
 use serde_json::{Value, json};
 pub(super) fn tools() -> Value {
     json!([
@@ -31,7 +31,7 @@ impl Ui {
         {
             return;
         }
-        let target = nixe_core::paths::data_dir().join("glimpse/launcher.sqlite");
+        let target = nyx_core::paths::data_dir().join("glimpse/launcher.sqlite");
         let enabled = prefs::get().glimpse_enabled;
         let weak = Rc::downgrade(self);
         worker::background(
@@ -152,7 +152,7 @@ impl Ui {
             move || -> anyhow::Result<(vault::ResolvedLink, Loaded, Option<Draft>)> {
                 let target = vault::resolve_link(&db, &root, &source, &note, true)?;
                 let (loaded, draft) =
-                    vault::open_with_recovery(&nixe_core::paths::state_dir(), &target.path)?;
+                    vault::open_with_recovery(&nyx_core::paths::state_dir(), &target.path)?;
                 Ok((target, loaded, draft))
             },
             move |result| {
@@ -440,7 +440,7 @@ fn suite_call(
             connection.call(
                 Some(&bus),
                 &path,
-                nixe_core::control::INTERFACE,
+                nyx_core::control::INTERFACE,
                 "Call",
                 Some(&params),
                 None,
@@ -640,7 +640,7 @@ impl Ui {
                 let weak = weak.clone();
                 let doc = doc.clone();
                 suite_call(
-                    "io.github.design_nexus.nixe.Capture",
+                    "io.github.design_nexus.nyx.Capture",
                     "capture.search",
                     json!({"query":query.text().as_str()}),
                     move |result| {
@@ -678,10 +678,10 @@ impl Ui {
                                     let weak = Rc::downgrade(&ui);
                                     let note = doc.path.clone();
                                     let capture_id = id.clone();
-                                    attach.connect_clicked(move |_|{let Some(ui)=weak.upgrade()else{return;};let extension=path.extension().and_then(|e|e.to_str()).filter(|s|["mp4","webm","mkv"].contains(s)).unwrap_or("png");let output=nixe_core::paths::cache_dir().join("capture-imports").join(format!("{}.{}",vault::canvas::id(),extension));let dir=output.parent().unwrap().to_owned();let id=capture_id.clone();let note=note.clone();let weak=Rc::downgrade(&ui);worker::run(move ||std::fs::create_dir_all(dir),move |result|{let Some(ui)=weak.upgrade()else{return;};if let Err(e)=result{ui.message(&format!("Capture import: {e}"));return;}let args=json!({"id":id,"path":output,"overwrite":false});let weak=Rc::downgrade(&ui);suite_call("io.github.design_nexus.nixe.Capture","capture.export",args,move |result|{if let Some(ui)=weak.upgrade(){match result{Ok(_)=>{ui.attach_paths(note,vec![output.clone()]);worker::run(move ||std::fs::remove_file(output),|_|{});},Err(e)=>ui.message(&e)}}});});});
+                                    attach.connect_clicked(move |_|{let Some(ui)=weak.upgrade()else{return;};let extension=path.extension().and_then(|e|e.to_str()).filter(|s|["mp4","webm","mkv"].contains(s)).unwrap_or("png");let output=nyx_core::paths::cache_dir().join("capture-imports").join(format!("{}.{}",vault::canvas::id(),extension));let dir=output.parent().unwrap().to_owned();let id=capture_id.clone();let note=note.clone();let weak=Rc::downgrade(&ui);worker::run(move ||std::fs::create_dir_all(dir),move |result|{let Some(ui)=weak.upgrade()else{return;};if let Err(e)=result{ui.message(&format!("Capture import: {e}"));return;}let args=json!({"id":id,"path":output,"overwrite":false});let weak=Rc::downgrade(&ui);suite_call("io.github.design_nexus.nyx.Capture","capture.export",args,move |result|{if let Some(ui)=weak.upgrade(){match result{Ok(_)=>{ui.attach_paths(note,vec![output.clone()]);worker::run(move ||std::fs::remove_file(output),|_|{});},Err(e)=>ui.message(&e)}}});});});
                                     let d = doc.clone();
                                     let weak = Rc::downgrade(&ui);
-                                    ocr.connect_clicked(move |_|{let d=d.clone();let weak=weak.clone();suite_call("io.github.design_nexus.nixe.Capture","capture.ocr_text",json!({"id":id}),move |result|{if let Some(ui)=weak.upgrade(){match result{Ok(value)=>{if d.closed.get()||d.read_only||d.conflict.get()||d.recovery_pending.get(){ui.message("The destination note is no longer writable");return;}let text=value["text"].as_str().unwrap_or_default();if text.len()>128*1024{ui.message("Stored OCR exceeds the insert limit");return;}d.editor.insert_text(text);},Err(e)=>ui.message(&e)}}});});
+                                    ocr.connect_clicked(move |_|{let d=d.clone();let weak=weak.clone();suite_call("io.github.design_nexus.nyx.Capture","capture.ocr_text",json!({"id":id}),move |result|{if let Some(ui)=weak.upgrade(){match result{Ok(value)=>{if d.closed.get()||d.read_only||d.conflict.get()||d.recovery_pending.get(){ui.message("The destination note is no longer writable");return;}let text=value["text"].as_str().unwrap_or_default();if text.len()>128*1024{ui.message("Stored OCR exceeds the insert limit");return;}d.editor.insert_text(text);},Err(e)=>ui.message(&e)}}});});
                                 }
                             }
                         }

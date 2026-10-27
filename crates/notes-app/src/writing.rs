@@ -67,7 +67,7 @@ impl Ui {
             return;
         };
         let path = doc.path.clone();
-        let state = nixe_core::paths::state_dir();
+        let state = nyx_core::paths::state_dir();
         let weak = Rc::downgrade(self);
         worker::run(
             move || history::list(&state, &path),
@@ -134,7 +134,7 @@ impl Ui {
                 "{stamp}\n{} bytes · #{}",
                 snapshot.bytes, snapshot.id
             ));
-            let state = nixe_core::paths::state_dir();
+            let state = nyx_core::paths::state_dir();
             let doc = doc.clone();
             let output = diff.buffer();
             let selected = selected.clone();
