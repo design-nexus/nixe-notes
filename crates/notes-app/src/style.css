@@ -1,3 +1,5 @@
+/* Notes on Nyx 2.0: only Notes' own parts. One surface: the vault, tabs and
+   editor share the window's background; spacing, not lines, separates them. */
 window.notes-window { background: @theme_bg; color: @theme_text; }
 window.notes-window .notes-editor, window.notes-window .notes-editor text { background-color: @theme_bg; color: @theme_text; }
 /* GtkSourceView paints its gutter separately from the text area. */
@@ -10,12 +12,13 @@ window.notes-window .notes-editor border gutter {
 window.notes-window .notes-editor border gutter > * {
   color: @theme_dim_text;
 }
-window.notes-window .notes-find, window.notes-window .notes-notice { padding: 6px 10px; border-bottom: 1px solid @hairline; }
+window.notes-window .notes-find, window.notes-window .notes-notice { padding: 6px 10px; }
 window.notes-window .notes-notice { color: @theme_text; }
 window.notes-window .notes-notice.conflict { color: @theme_danger; }
-window.notes-window notebook > header { background: @theme_bg; border-bottom: 1px solid @hairline; }
-window.notes-window notebook > header tab { padding: 4px 8px; background: @theme_bg; border: none; }
-window.notes-window notebook > header tab:checked { background: @nav_active; }
+window.notes-window notebook > header { background: @theme_bg; border: none; box-shadow: none; padding: 0 8px; }
+window.notes-window notebook > header tab { padding: 4px 10px; margin: 4px 2px; background: transparent; border: none; border-radius: var(--nyx-radius-small); color: @theme_dim_text; }
+window.notes-window notebook > header tab:hover { background: @row_hover; }
+window.notes-window notebook > header tab:checked { background: alpha(@theme_text, 0.07); color: @theme_text; }
 window.notes-window expander title { min-height: 32px; }
 window.notes-window scrollbar { min-width: 0; min-height: 0; opacity: 0; }
 window.notes-window .notes-reader { background: @theme_bg; color: @theme_text; }
@@ -25,4 +28,11 @@ window.notes-window .notes-heading-2 { font-size: 1.4em; font-weight: 700; }
 window.notes-window .notes-heading-3 { font-size: 1.2em; font-weight: 700; }
 window.notes-window .notes-heading-4, window.notes-window .notes-heading-5, window.notes-window .notes-heading-6 { font-weight: 700; }
 window.notes-window .notes-callout { border-left: 3px solid @theme_accent; padding-left: 12px; }
-window.notes-window .notes-table-cell { padding: 6px 10px; border-bottom: 1px solid @hairline; }
+window.notes-window .notes-table-cell { padding: 6px 10px; }
+/* The status, quiet at the end of the command bar. */
+window.notes-window .notes-status { color: @theme_dim_text; font-size: 11.5px; margin: 0 8px; }
+window.notes-window .nav-top { padding: 6px 8px 2px 8px; }
+/* Blended: the vault and the editor meet without a line. */
+window.notes-window paned > separator { background-color: @theme_bg; background-image: none; border: none; box-shadow: none; min-width: 1px; }
+/* Tabs: a soft pill for the open one, no underline. */
+window.notes-window notebook > header tab:checked { box-shadow: none; border: none; }

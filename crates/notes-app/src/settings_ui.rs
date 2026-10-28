@@ -120,12 +120,7 @@ impl Ui {
             },
         );
         appearance.append(&row);
-        let (row, _) =
-            widgets::switch_row("Glow", "Use the suite glow preference", p.glow, |value| {
-                prefs::update(|p| p.glow = value);
-                nyx_theme::apply();
-            });
-        appearance.append(&row);
+        appearance.append(&widgets::accent_row("notes"));
         appearance.append(&widgets::start_row());
 
         let editor = group(&body, "Editor");

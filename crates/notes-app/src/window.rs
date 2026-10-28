@@ -35,9 +35,9 @@ mod writing;
 use crate::{prefs, worker};
 use anyhow::Context;
 use gtk::{gdk, gio, glib, prelude::*};
-use nyx_ui::{chrome, commandbar::CommandBar, inspector::Inspector, widgets};
 use notes_editor::Editor;
 use notes_vault::{self as vault, Draft, Loaded, Version};
+use nyx_ui::{chrome, commandbar::CommandBar, inspector::Inspector, widgets};
 use sourceview5::prelude::*;
 use std::{
     cell::{Cell, RefCell},
@@ -75,6 +75,8 @@ struct Ui {
     nav: gtk::Box,
     split: gtk::Paned,
     head: gtk::Box,
+    /// The 2.0 header; its subtitle is the vault's name.
+    header: nyx_ui::chrome::AppHeader,
     tree: gtk::Box,
     root: RefCell<Option<PathBuf>>,
     db: RefCell<Option<PathBuf>>,
@@ -222,6 +224,7 @@ pub fn present(app: &gtk::Application, vault_path: Option<PathBuf>, files: Vec<P
         ui.window.present();
         return;
     }
+    nyx_theme::use_design_2();
     nyx_theme::install(nyx_theme::Style {
         window_class: "notes-window",
         base_skip: &[],
@@ -312,8 +315,14 @@ impl Ui {
         let nav = widgets::vbox(0);
         nav.add_css_class("settings-navigation");
         nav.set_width_request(250);
-        let head = chrome::sidebar_head("Notes", Some("Search the vault (Ctrl+Shift+F)"));
-        nav.append(&head.root);
+        let head = widgets::hbox(0);
+        head.add_css_class("nav-top");
+        let collapse =
+            widgets::bar_button("sidebar-show-symbolic", "Collapse the sidebar (Ctrl+B)");
+        collapse.set_hexpand(true);
+        collapse.set_halign(gtk::Align::End);
+        head.append(&collapse);
+        nav.append(&head);
         let open = widgets::labeled_button("folder-open-symbolic", "Open vault");
         open.add_css_class("nav-item");
         let new = widgets::hbox(4);
@@ -349,7 +358,7 @@ impl Ui {
         menu.append(&open);
         let sidebar_open = widgets::labeled_button("folder-open-symbolic", "Open vault");
         sidebar_open.add_css_class("nav-item");
-        nav.insert_child_after(&sidebar_open, Some(&head.root));
+        nav.insert_child_after(&sidebar_open, Some(&head));
         menu.append(&save_as);
         bar.lead(&[
             file_menu.upcast_ref(),
@@ -371,6 +380,13 @@ impl Ui {
         let fold_button =
             widgets::bar_button("pan-down-symbolic", "Fold or unfold heading (Ctrl+Alt+F)");
         bar.more(&fold_button, "pan-down-symbolic", "Fold heading");
+        let status = gtk::Label::new(Some("Open a vault to begin"));
+        status.add_css_class("notes-status");
+        status.set_xalign(1.0);
+        status.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        status.set_max_width_chars(48);
+        status.set_hexpand(true);
+        bar.end(&status);
         let find_button = widgets::bar_button("edit-find-symbolic", "Find in note (Ctrl+F)");
         bar.end(&find_button);
         let inspector = Inspector::new();
@@ -440,13 +456,10 @@ impl Ui {
         center.append(&find_row);
         center.append(&notice_row);
         let search = gtk::SearchEntry::new();
-        search.set_placeholder_text(Some(
-            "Search vault · tag: path: property:name=value heading:",
-        ));
-        search.set_visible(false);
-        let search_strip = chrome::search_strip(&search);
-        search_strip.set_visible(false);
-        center.append(&search_strip);
+        search.set_placeholder_text(Some("Search the vault  (Ctrl+Shift+F)"));
+        search.set_tooltip_text(Some("Words, or tag: path: property:name=value heading:"));
+        search.add_css_class("bar-search");
+        search.set_width_chars(40);
         let results = widgets::vbox(4);
         let result_scroll = scroll(&results);
         result_scroll.set_max_content_height(240);
@@ -496,17 +509,15 @@ Your Markdown files stay where they are.",
         split.set_position(250);
         split.set_hexpand(true);
         body.append(&split);
+        // The header: the app and the vault, vault search, and Settings.
+        let header =
+            nyx_ui::chrome::app_header(&window, "accessories-text-editor-symbolic", "Notes");
+        header.center.append(&search);
+        header
+            .end
+            .append(&nyx_ui::chrome::settings_button(settings));
+        frame.append(&header.root);
         frame.append(&body);
-        let status_row = widgets::hbox(8);
-        status_row.add_css_class("status-bar");
-        status_row.append(&chrome::shortcuts_button(shortcuts));
-        let status = gtk::Label::new(Some("Open a vault to begin"));
-        status.set_hexpand(true);
-        status.set_xalign(1.0);
-        status.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        status_row.append(&status);
-        status_row.append(&chrome::gear(settings));
-        frame.append(&status_row);
         overlay.set_child(Some(&frame));
         window.set_child(Some(&overlay));
         let css = gtk::CssProvider::new();
@@ -522,7 +533,8 @@ Your Markdown files stay where they are.",
             overlay,
             nav,
             split,
-            head: head.root,
+            head: head.clone(),
+            header,
             tree,
             root: RefCell::new(None),
             db: RefCell::new(None),
@@ -738,7 +750,7 @@ Your Markdown files stay where they are.",
             }
         });
         let weak = Rc::downgrade(&ui);
-        head.toggle.connect_clicked(move |_| {
+        collapse.connect_clicked(move |_| {
             if let Some(ui) = weak.upgrade() {
                 ui.toggle_sidebar();
             }
@@ -830,27 +842,10 @@ Your Markdown files stay where they are.",
             glib::Propagation::Proceed
         });
         ui.search.add_controller(search_keys);
-        if let Some(button) = head.search {
-            let weak = Rc::downgrade(&ui);
-            button.connect_clicked(move |_| {
-                if let Some(ui) = weak.upgrade() {
-                    ui.show_search();
-                }
-            });
-        }
-        let strip = search_strip.clone();
         let results_scroll = result_scroll.clone();
-        let weak = Rc::downgrade(&ui);
-        ui.search
-            .connect_notify_local(Some("visible"), move |search, _| {
-                strip.set_visible(search.is_visible());
-                results_scroll.set_visible(search.is_visible());
-                if !search.is_visible()
-                    && let Some(ui) = weak.upgrade()
-                {
-                    ui.search.set_text("");
-                }
-            });
+        ui.search.connect_search_changed(move |search| {
+            results_scroll.set_visible(!search.text().is_empty());
+        });
         let weak = Rc::downgrade(&ui);
         ui.window.connect_close_request(move |_| {
             let Some(ui) = weak.upgrade() else {
@@ -915,7 +910,7 @@ Your Markdown files stay where they are.",
                     }
                     nyx_ui::settings_card::escape();
                     ui.find_row.set_visible(false);
-                    ui.search.set_visible(false);
+                    ui.search.set_text("");
                     ui.inspector.escape();
                 }
                 _ => return glib::Propagation::Proceed,
@@ -994,7 +989,13 @@ Your Markdown files stay where they are.",
         if self.compact.replace(compact) != compact {
             self.nav.set_width_request(if compact { 52 } else { 250 });
             self.split.set_position(if compact { 52 } else { 250 });
-            chrome::set_head_compact(&self.head, compact);
+            if let Some(toggle) = self.head.first_child() {
+                toggle.set_halign(if compact {
+                    gtk::Align::Center
+                } else {
+                    gtk::Align::End
+                });
+            }
             if compact {
                 self.nav.add_css_class("compact");
             } else {
@@ -1074,11 +1075,9 @@ Your Markdown files stay where they are.",
                             p.recent_vaults.insert(0, root.clone());
                             p.recent_vaults.truncate(12);
                         });
-                        chrome::set_title(
-                            &ui.window,
-                            "Notes",
-                            &root.file_name().unwrap_or_default().to_string_lossy(),
-                        );
+                        let vault_name = root.file_name().unwrap_or_default().to_string_lossy();
+                        chrome::set_title(&ui.window, "Notes", &vault_name);
+                        ui.header.set_subtitle(&vault_name);
                         ui.populate_root();
                         ui.rebuild();
                         let to_open = if files.is_empty() && prefs::get().restore_tabs {
@@ -2400,7 +2399,7 @@ Your Markdown files stay where they are.",
                         }
                         Err(e) => ui.message(&format!("Search indexing failed: {e:#}")),
                     }
-                    if ui.search.is_visible() {
+                    if !ui.search.text().is_empty() {
                         ui.search_vault();
                     }
                 }
@@ -2436,7 +2435,6 @@ Your Markdown files stay where they are.",
         );
     }
     fn show_search(&self) {
-        self.search.set_visible(true);
         self.search.grab_focus();
     }
     fn search_vault(self: &Rc<Self>) {
