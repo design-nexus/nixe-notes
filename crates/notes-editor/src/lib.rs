@@ -35,6 +35,8 @@ pub struct Editor {
     writable: Cell<bool>,
     hidden_tag: gtk::TextTag,
     fold_tag: gtk::TextTag,
+    /// Live: the front matter, small and quiet above the note.
+    frontmatter_tag: gtk::TextTag,
     fold_marks: RefCell<Vec<(gtk::TextMark, gtk::TextMark)>>,
     pub revision: Cell<u64>,
     live: Cell<bool>,
@@ -92,7 +94,7 @@ impl Editor {
                 Kind::Emphasis => tag.set_style(pango::Style::Italic),
                 Kind::Strike => tag.set_strikethrough(true),
                 Kind::Link => tag.set_underline(pango::Underline::Single),
-                _ => {}
+                Kind::Code | Kind::CodeBlock => tag.set_family(Some("monospace")),
             }
             buffer.tag_table().add(&tag);
             tags.push((kind, tag));
@@ -130,6 +132,11 @@ impl Editor {
             .invisible(true)
             .build();
         buffer.tag_table().add(&fold_tag);
+        let frontmatter_tag = gtk::TextTag::builder()
+            .name("frontmatter")
+            .scale(0.85)
+            .build();
+        buffer.tag_table().add(&frontmatter_tag);
         let editor = Rc::new(Self {
             buffer,
             view,
@@ -145,6 +152,7 @@ impl Editor {
             writable: Cell::new(true),
             hidden_tag,
             fold_tag,
+            frontmatter_tag,
             fold_marks: RefCell::new(Vec::new()),
             revision: Cell::new(0),
             live: Cell::new(false),
@@ -353,6 +361,13 @@ impl Editor {
         self.live.set(live);
         self.buffer.set_highlight_syntax(!live);
         self.view.set_show_line_numbers(!live);
+        // Live reads as prose in the interface font; code keeps a monospace face.
+        self.view.set_monospace(!live);
+        if live {
+            self.view.add_css_class("prose");
+        } else {
+            self.view.remove_css_class("prose");
+        }
         self.apply(&self.parsed.borrow());
     }
     pub fn refresh_reading(&self) {
@@ -520,10 +535,11 @@ impl Editor {
             ));
         }
     }
-    pub fn set_palette(&self, accent: &str, background: &str, light: bool) {
+    pub fn set_palette(&self, accent: &str, background: &str, dim: &str, light: bool) {
+        self.frontmatter_tag.set_foreground(Some(dim));
         for (kind, tag) in &self.tags {
             match kind {
-                Kind::Link | Kind::Heading => tag.set_foreground(Some(accent)),
+                Kind::Link => tag.set_foreground(Some(accent)),
                 Kind::Code | Kind::CodeBlock => tag.set_background(Some(background)),
                 _ => {}
             }
@@ -704,6 +720,7 @@ impl Editor {
                 self.buffer.remove_tag(tag, &a, &b);
             }
             self.buffer.remove_tag(&self.hidden_tag, &a, &b);
+            self.buffer.remove_tag(&self.frontmatter_tag, &a, &b);
             self.buffer.delete_mark(&start);
             self.buffer.delete_mark(&end);
         }
@@ -786,6 +803,16 @@ impl Editor {
                     tag,
                     &self.buffer.iter_at_offset(*start),
                     &self.buffer.iter_at_offset(*end),
+                );
+            }
+        }
+        if let Some(range) = &parsed.frontmatter {
+            let (from, to) = (range.start.max(start), range.end.min(end));
+            if from < to {
+                self.buffer.apply_tag(
+                    &self.frontmatter_tag,
+                    &self.buffer.iter_at_offset(from),
+                    &self.buffer.iter_at_offset(to),
                 );
             }
         }

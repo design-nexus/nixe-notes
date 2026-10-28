@@ -44,6 +44,12 @@ pub struct Prefs {
     pub typewriter: bool,
     pub workspaces: Vec<Workspace>,
     pub saved_searches: Vec<(String, String)>,
+    /// The 2.0 defaults (Live editing, a readable column) were applied once. Missing
+    /// from settings saved before 2.0, so those read false.
+    #[serde(default)]
+    pub design_2: bool,
+    /// The inspector (outline, links, info) beside the editor.
+    pub inspector_open: bool,
 }
 impl Default for Prefs {
     fn default() -> Self {
@@ -56,7 +62,7 @@ impl Default for Prefs {
             font_size: 12.0,
             font_family: "JetBrains Mono".into(),
             line_spacing: 4,
-            writing_width: 0,
+            writing_width: 70,
             recent_vaults: vec![],
             expanded_folders: BTreeMap::new(),
             last_vault: None,
@@ -66,7 +72,7 @@ impl Default for Prefs {
             daily_folder: "Daily Notes".into(),
             daily_template: String::new(),
             attachments_folder: "Attachments".into(),
-            editor_mode: "source".into(),
+            editor_mode: "live".into(),
             split_enabled: false,
             split_files: Vec::new(),
             graph: GraphSettings::default(),
@@ -86,6 +92,8 @@ impl Default for Prefs {
             typewriter: false,
             workspaces: Vec::new(),
             saved_searches: Vec::new(),
+            design_2: true,
+            inspector_open: true,
         }
     }
 }

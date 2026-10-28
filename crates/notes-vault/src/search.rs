@@ -288,6 +288,17 @@ fn disjunctions(query: &str) -> Result<Vec<&str>> {
     output.push(last);
     Ok(output)
 }
+/// The vault's tags with how many notes carry each, most used first.
+pub fn tag_counts(db: &Path, limit: usize) -> Result<Vec<(String, usize)>> {
+    let conn = connect(db)?;
+    let mut statement = conn.prepare(
+        "SELECT tag, COUNT(*) FROM note_tags GROUP BY tag ORDER BY COUNT(*) DESC, tag LIMIT ?1",
+    )?;
+    let rows = statement.query_map([limit as i64], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize))
+    })?;
+    Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+}
 pub fn search(db: &Path, query: &str) -> Result<Vec<SearchHit>> {
     query_index(db, query, 100)
 }
@@ -564,5 +575,25 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
         update_index(&db, &path).unwrap();
         assert!(search(&db, "new").unwrap().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod tag_count_tests {
+    use super::*;
+
+    #[test]
+    fn counts_tags_most_used_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("vault");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("a.md"), "# A\n#design #nyx\n").unwrap();
+        std::fs::write(root.join("b.md"), "# B\n#nyx\n").unwrap();
+        let db = dir.path().join("index.sqlite");
+        rebuild_index(&db, &root).unwrap();
+        assert_eq!(
+            tag_counts(&db, 10).unwrap(),
+            vec![("nyx".to_string(), 2), ("design".to_string(), 1)]
+        );
     }
 }

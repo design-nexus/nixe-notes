@@ -37,11 +37,11 @@ use anyhow::Context;
 use gtk::{gdk, gio, glib, prelude::*};
 use notes_editor::Editor;
 use notes_vault::{self as vault, Draft, Loaded, Version};
-use nyx_ui::{chrome, commandbar::CommandBar, inspector::Inspector, widgets};
+use nyx_ui::{chrome, inspector::Inspector, widgets};
 use sourceview5::prelude::*;
 use std::{
     cell::{Cell, RefCell},
-    path::PathBuf,
+    path::{Path, PathBuf},
     rc::Rc,
     time::Duration,
 };
@@ -78,6 +78,8 @@ struct Ui {
     /// The 2.0 header; its subtitle is the vault's name.
     header: nyx_ui::chrome::AppHeader,
     tree: gtk::Box,
+    /// The vault's most used tags, under the tree.
+    tags: gtk::Box,
     root: RefCell<Option<PathBuf>>,
     db: RefCell<Option<PathBuf>>,
     generation: Cell<u64>,
@@ -92,7 +94,8 @@ struct Ui {
     docs: RefCell<Vec<Document>>,
     opening: RefCell<Vec<PathBuf>>,
     canvases: RefCell<CanvasWindows>,
-    bar: Rc<CommandBar>,
+    /// The open note's place in the vault and name, in the header's middle.
+    doc_title: DocTitle,
     inspector: Rc<Inspector>,
     outline_model: gtk::StringList,
     outline_key: RefCell<Option<(PathBuf, u64)>>,
@@ -247,6 +250,19 @@ pub fn present(app: &gtk::Application, vault_path: Option<PathBuf>, files: Vec<P
             })
         }),
     });
+    // Settings saved before 2.0 carry the old defaults (Source, full width); move
+    // those once to Live and a readable column. Later choices are left alone.
+    if !prefs::get().design_2 {
+        prefs::update(|p| {
+            if p.editor_mode == "source" {
+                p.editor_mode = "live".into();
+            }
+            if p.writing_width == 0 {
+                p.writing_width = 70;
+            }
+            p.design_2 = true;
+        });
+    }
     let ui = Ui::build(app);
     UI.with(|s| *s.borrow_mut() = Some(ui.clone()));
     ui.apply_typography();
@@ -289,6 +305,58 @@ pub fn present(app: &gtk::Application, vault_path: Option<PathBuf>, files: Vec<P
         },
     );
 }
+/// The header's middle: the open note's folder (dimmed), its name, and a dot while
+/// it has unsaved changes.
+struct DocTitle {
+    root: gtk::Box,
+    folder: gtk::Label,
+    name: gtk::Label,
+    dot: gtk::Box,
+}
+
+impl DocTitle {
+    fn new() -> Self {
+        let root = widgets::hbox(6);
+        root.add_css_class("doc-title");
+        let folder = widgets::label("", "doc-title-folder");
+        folder.set_ellipsize(gtk::pango::EllipsizeMode::Start);
+        folder.set_max_width_chars(28);
+        let name = widgets::label("", "doc-title-name");
+        name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        name.set_max_width_chars(40);
+        let dot = widgets::hbox(0);
+        dot.add_css_class("doc-title-dot");
+        dot.set_valign(gtk::Align::Center);
+        dot.set_tooltip_text(Some("Unsaved changes"));
+        dot.set_visible(false);
+        root.append(&folder);
+        root.append(&name);
+        root.append(&dot);
+        Self {
+            root,
+            folder,
+            name,
+            dot,
+        }
+    }
+
+    fn set(&self, folder: &Path, note: &Path, dirty: bool) {
+        let parts: Vec<String> = folder
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        self.folder.set_text(&if parts.is_empty() {
+            String::new()
+        } else {
+            format!("{} /", parts.join(" / "))
+        });
+        self.folder.set_visible(!parts.is_empty());
+        self.name
+            .set_text(&note.file_stem().unwrap_or_default().to_string_lossy());
+        self.dot.set_visible(dirty);
+    }
+}
+
 impl Ui {
     fn build(app: &gtk::Application) -> Rc<Self> {
         let window = gtk::ApplicationWindow::builder()
@@ -323,74 +391,110 @@ impl Ui {
         collapse.set_halign(gtk::Align::End);
         head.append(&collapse);
         nav.append(&head);
-        let open = widgets::labeled_button("folder-open-symbolic", "Open vault");
-        open.add_css_class("nav-item");
-        let new = widgets::hbox(4);
-        let new_note = widgets::bar_button("document-new-symbolic", "New note (Ctrl+N)");
-        let new_folder = widgets::bar_button("folder-new-symbolic", "New folder");
-        let refresh =
-            widgets::bar_button("view-refresh-symbolic", "Refresh vault and search index");
-        new.append(&new_note);
-        new.append(&new_folder);
-        new.append(&refresh);
-        nav.append(&new);
         let tree = widgets::vbox(0);
-        let tree_scroll = scroll(&tree);
+        let tags = widgets::vbox(0);
+        tags.add_css_class("tree-tags");
+        let side = widgets::vbox(0);
+        side.append(&tree);
+        side.append(&tags);
+        let tree_scroll = scroll(&side);
         tree_scroll.set_vexpand(true);
         nav.append(&tree_scroll);
         let center = widgets::vbox(0);
         center.set_hexpand(true);
-        let bar = CommandBar::new();
-        let save = widgets::bar_button("document-save-symbolic", "Save (Ctrl+S)");
-        let save_as =
-            widgets::bar_button("document-save-as-symbolic", "Save a copy (Ctrl+Shift+S)");
-        let undo = widgets::bar_button("edit-undo-symbolic", "Undo (Ctrl+Z)");
-        let redo = widgets::bar_button("edit-redo-symbolic", "Redo (Ctrl+Shift+Z)");
-        let file_menu = gtk::MenuButton::builder().label("File").build();
-        file_menu.add_css_class("commandbar-file");
-        let menu = widgets::vbox(4);
+        // The header's ⋯ menu: the vault and file actions, editing, and the modes (each
+        // also on its key); features add their items below.
+        let item = |label: &str| {
+            let b = gtk::Button::with_label(label);
+            b.set_has_frame(false);
+            b.add_css_class("notes-menu-item");
+            if let Some(child) = b.child().and_downcast::<gtk::Label>() {
+                child.set_xalign(0.0);
+            }
+            b.connect_clicked(|b| {
+                if let Some(popover) = b
+                    .ancestor(gtk::Popover::static_type())
+                    .and_downcast::<gtk::Popover>()
+                {
+                    popover.popdown();
+                }
+            });
+            b
+        };
+        let toggle_item = |label: &str, tooltip: &str| {
+            let t = gtk::ToggleButton::with_label(label);
+            t.set_has_frame(false);
+            t.set_tooltip_text(Some(tooltip));
+            t.add_css_class("notes-menu-item");
+            if let Some(child) = t.child().and_downcast::<gtk::Label>() {
+                child.set_xalign(0.0);
+            }
+            t
+        };
+        let open = item("Open vault…  (Ctrl+O)");
+        let new_note = item("New note  (Ctrl+N)");
+        let new_folder = item("New folder");
+        let refresh = item("Refresh vault and search index");
+        let save = item("Save  (Ctrl+S)");
+        let save_as = item("Save a copy  (Ctrl+Shift+S)");
+        let undo = item("Undo  (Ctrl+Z)");
+        let redo = item("Redo  (Ctrl+Shift+Z)");
+        let live = toggle_item(
+            "Live formatting",
+            "Live formatting; Markdown source remains intact",
+        );
+        let reading = toggle_item("Reading mode", "Reading mode (F4 cycles modes)");
+        let task_button = item("Toggle task  (Ctrl+T)");
+        let fold_button = item("Fold or unfold heading  (Ctrl+Alt+F)");
+        let find_button = item("Find in note  (Ctrl+F)");
+        let menu = widgets::vbox(2);
+        menu.add_css_class("notes-menu");
         let popover = gtk::Popover::new();
         let menu_scroll = scroll(&menu);
         menu_scroll.set_max_content_height(520);
         menu_scroll.set_propagate_natural_height(true);
         popover.set_child(Some(&menu_scroll));
+        let file_menu = gtk::MenuButton::builder()
+            .icon_name("view-more-symbolic")
+            .tooltip_text("Menu (F10)")
+            .build();
+        file_menu.add_css_class("flat");
         file_menu.set_popover(Some(&popover));
-        menu.append(&open);
-        let sidebar_open = widgets::labeled_button("folder-open-symbolic", "Open vault");
-        sidebar_open.add_css_class("nav-item");
-        nav.insert_child_after(&sidebar_open, Some(&head));
-        menu.append(&save_as);
-        bar.lead(&[
-            file_menu.upcast_ref(),
+        for (i, widget) in [
+            open.upcast_ref::<gtk::Widget>(),
+            new_note.upcast_ref(),
+            new_folder.upcast_ref(),
+            refresh.upcast_ref(),
             save.upcast_ref(),
+            save_as.upcast_ref(),
             undo.upcast_ref(),
             redo.upcast_ref(),
-        ]);
-        let live = gtk::ToggleButton::with_label("Live");
-        live.set_tooltip_text(Some("Live formatting; Markdown source remains intact"));
-        bar.group(0);
-        bar.tool(&live, "format-text-rich-symbolic", "Live preview");
-        let reading = gtk::ToggleButton::new();
-        reading.set_tooltip_text(Some("Reading mode (F4 cycles modes)"));
-        bar.tool(&reading, "view-reveal-symbolic", "Reading mode");
-        let split_button = widgets::bar_button("view-dual-symbolic", "Split editor panes");
-        bar.tool(&split_button, "view-dual-symbolic", "Split panes");
-        let task_button = widgets::bar_button("checkbox-checked-symbolic", "Toggle task (Ctrl+T)");
-        bar.more(&task_button, "checkbox-checked-symbolic", "Toggle task");
-        let fold_button =
-            widgets::bar_button("pan-down-symbolic", "Fold or unfold heading (Ctrl+Alt+F)");
-        bar.more(&fold_button, "pan-down-symbolic", "Fold heading");
+            live.upcast_ref(),
+            reading.upcast_ref(),
+            task_button.upcast_ref(),
+            fold_button.upcast_ref(),
+            find_button.upcast_ref(),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if i == 4 || i == 8 {
+                menu.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+            }
+            menu.append(widget);
+        }
+        menu.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+        let split_button = widgets::bar_button("view-dual-symbolic", "Split editor (Ctrl+\\)");
         let status = gtk::Label::new(Some("Open a vault to begin"));
         status.add_css_class("notes-status");
-        status.set_xalign(1.0);
         status.set_ellipsize(gtk::pango::EllipsizeMode::End);
         status.set_max_width_chars(48);
-        status.set_hexpand(true);
-        bar.end(&status);
-        let find_button = widgets::bar_button("edit-find-symbolic", "Find in note (Ctrl+F)");
-        bar.end(&find_button);
+        status.set_xalign(0.0);
+        // The sidebar's foot: the open note's words and whether it's saved, or what the
+        // vault is doing.
+        nav.append(&status);
+        let doc_title = DocTitle::new();
         let inspector = Inspector::new();
-        bar.end(inspector.toggle_button());
         let (outline_model, outline_view, outline_scroll) = text_list(240);
         inspector
             .segment("Outline")
@@ -452,14 +556,13 @@ impl Ui {
         let dismiss = widgets::bar_button("window-close-symbolic", "Dismiss message");
         notice_row.append(&dismiss);
         notice_row.set_visible(false);
-        center.append(&bar.root);
         center.append(&find_row);
         center.append(&notice_row);
         let search = gtk::SearchEntry::new();
         search.set_placeholder_text(Some("Search the vault  (Ctrl+Shift+F)"));
         search.set_tooltip_text(Some("Words, or tag: path: property:name=value heading:"));
         search.add_css_class("bar-search");
-        search.set_width_chars(40);
+        search.set_width_chars(24);
         let results = widgets::vbox(4);
         let result_scroll = scroll(&results);
         result_scroll.set_max_content_height(240);
@@ -500,6 +603,12 @@ Your Markdown files stay where they are.",
         welcome_panel.append(&connect_vault);
         workspace.add_named(&welcome_panel, Some("welcome"));
         workspace.add_named(&inspector.wrap(&editor_split), Some("editor"));
+        inspector.set_open(prefs::get().inspector_open);
+        inspector.connect_open(|open| {
+            if prefs::get().inspector_open != open {
+                prefs::update(|p| p.inspector_open = open);
+            }
+        });
         center.append(&workspace);
         let split = gtk::Paned::new(gtk::Orientation::Horizontal);
         split.set_start_child(Some(&nav));
@@ -512,7 +621,11 @@ Your Markdown files stay where they are.",
         // The header: the app and the vault, vault search, and Settings.
         let header =
             nyx_ui::chrome::app_header(&window, "accessories-text-editor-symbolic", "Notes");
-        header.center.append(&search);
+        header.center.append(&doc_title.root);
+        header.end.append(&search);
+        header.end.append(&split_button);
+        header.end.append(inspector.toggle_button());
+        header.end.append(&file_menu);
         header
             .end
             .append(&nyx_ui::chrome::settings_button(settings));
@@ -536,6 +649,7 @@ Your Markdown files stay where they are.",
             head: head.clone(),
             header,
             tree,
+            tags,
             root: RefCell::new(None),
             db: RefCell::new(None),
             generation: Cell::new(0),
@@ -558,7 +672,7 @@ Your Markdown files stay where they are.",
             docs: RefCell::new(Vec::new()),
             opening: RefCell::new(Vec::new()),
             canvases: RefCell::new(std::collections::HashMap::new()),
-            bar,
+            doc_title,
             inspector,
             outline_model,
             outline_key: RefCell::new(None),
@@ -733,7 +847,6 @@ Your Markdown files stay where they are.",
         }
         click!(open, choose_vault);
         click!(connect_vault, choose_vault);
-        click!(sidebar_open, choose_vault);
         click!(new_note, new_note);
         click!(new_folder, new_folder);
         click!(refresh, refresh);
@@ -1118,6 +1231,49 @@ Your Markdown files stay where they are.",
         self.tree.append(&listing);
         self.populate(root, listing, 0);
     }
+    /// The Tags group under the tree; a tag searches the vault for it.
+    fn populate_tags(self: &Rc<Self>) {
+        let Some(db) = self.db.borrow().clone() else {
+            return;
+        };
+        let weak = Rc::downgrade(self);
+        worker::run(
+            move || vault::tag_counts(&db, 12),
+            move |result| {
+                let Some(ui) = weak.upgrade() else { return };
+                clear(&ui.tags);
+                let Ok(tags) = result else { return };
+                if tags.is_empty() {
+                    return;
+                }
+                ui.tags.append(&widgets::label("TAGS", "nav-group"));
+                for (tag, count) in tags {
+                    let row = widgets::hbox(8);
+                    let hash = widgets::label("#", "tree-hash");
+                    hash.set_width_chars(2);
+                    hash.set_xalign(0.5);
+                    row.append(&hash);
+                    let name = widgets::label(&tag, "tree-name");
+                    name.set_hexpand(true);
+                    name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                    row.append(&name);
+                    row.append(&widgets::label(&count.to_string(), "tree-count"));
+                    let button = gtk::Button::new();
+                    button.set_child(Some(&row));
+                    button.add_css_class("nav-item");
+                    button.set_tooltip_text(Some(&format!("Notes tagged #{tag}")));
+                    let weak = Rc::downgrade(&ui);
+                    button.connect_clicked(move |_| {
+                        if let Some(ui) = weak.upgrade() {
+                            ui.search.set_text(&format!("tag:{tag}"));
+                            ui.show_search();
+                        }
+                    });
+                    ui.tags.append(&button);
+                }
+            },
+        );
+    }
     fn populate(self: &Rc<Self>, dir: PathBuf, target: gtk::Box, depth: i32) {
         let Some(root) = self.root.borrow().clone() else {
             return;
@@ -1127,7 +1283,29 @@ Your Markdown files stay where they are.",
         let watch = dir.clone();
         let vault_root = root.clone();
         worker::run(
-            move || vault::children_all(&root, &dir),
+            // Each folder with the notes directly in it, for the tree's counts.
+            move || {
+                vault::children_all(&root, &dir).map(|entries| {
+                    entries
+                        .into_iter()
+                        .map(|entry| {
+                            let notes = if entry.directory {
+                                std::fs::read_dir(&entry.path)
+                                    .map(|items| {
+                                        items
+                                            .flatten()
+                                            .filter(|item| vault::is_markdown(&item.path()))
+                                            .count()
+                                    })
+                                    .unwrap_or(0)
+                            } else {
+                                0
+                            };
+                            (entry, notes)
+                        })
+                        .collect::<Vec<_>>()
+                })
+            },
             move |result| {
                 let Some(ui) = weak.upgrade() else { return };
                 if ui.generation.get() != generation
@@ -1144,17 +1322,23 @@ Your Markdown files stay where they are.",
                             .get(&vault_root)
                             .cloned()
                             .unwrap_or_default();
-                        for entry in entries {
+                        for (entry, notes) in entries {
                             if entry.directory {
-                                let expander = gtk::Expander::builder()
-                                    .label(
-                                        entry
-                                            .path
-                                            .file_name()
-                                            .unwrap_or_default()
-                                            .to_string_lossy(),
-                                    )
-                                    .build();
+                                let row = widgets::hbox(8);
+                                row.add_css_class("tree-folder");
+                                row.append(&gtk::Image::from_icon_name("folder-symbolic"));
+                                let name = widgets::label(
+                                    &entry.path.file_name().unwrap_or_default().to_string_lossy(),
+                                    "tree-name",
+                                );
+                                name.set_hexpand(true);
+                                name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                                row.append(&name);
+                                if notes > 0 {
+                                    row.append(&widgets::label(&notes.to_string(), "tree-count"));
+                                }
+                                let expander = gtk::Expander::builder().label_widget(&row).build();
+                                expander.add_css_class("tree-expander");
                                 expander.set_margin_start(8 + depth * 8);
                                 let children = widgets::vbox(0);
                                 expander.set_child(Some(&children));
@@ -1200,8 +1384,14 @@ Your Markdown files stay where they are.",
                                 target.append(&expander);
                                 expander.set_expanded(restore);
                             } else {
-                                let name =
-                                    entry.path.file_name().unwrap_or_default().to_string_lossy();
+                                // Notes by their name; other files keep their extension.
+                                let name = if vault::is_markdown(&entry.path) {
+                                    entry.path.file_stem()
+                                } else {
+                                    entry.path.file_name()
+                                }
+                                .unwrap_or_default()
+                                .to_string_lossy();
                                 let button = widgets::labeled_button(
                                     if entry.symlink {
                                         "emblem-symbolic-link-symbolic"
@@ -1437,9 +1627,14 @@ Your Markdown files stay where they are.",
         label.set_max_width_chars(28);
         label.set_xalign(0.0);
         label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-        let tab = widgets::hbox(4);
+        let tab = widgets::hbox(6);
+        tab.add_css_class("note-tab");
+        let icon = gtk::Image::from_icon_name("text-x-generic-symbolic");
+        icon.add_css_class("note-tab-icon");
+        tab.append(&icon);
         tab.append(&label);
         let close = widgets::bar_button("window-close-symbolic", "Close note (Ctrl+W)");
+        close.add_css_class("note-tab-close");
         tab.append(&close);
         tab.set_hexpand(false);
         tab.set_focusable(true);
@@ -2180,8 +2375,19 @@ Your Markdown files stay where they are.",
     }
     fn update_active(self: &Rc<Self>) {
         if let Some(doc) = self.active() {
-            let name = doc.path.file_stem().unwrap_or_default().to_string_lossy();
-            self.bar.set_title(&name, ".md", doc.dirty.get());
+            let folder = self
+                .root
+                .borrow()
+                .as_ref()
+                .and_then(|root| {
+                    doc.path
+                        .parent()?
+                        .strip_prefix(root)
+                        .ok()
+                        .map(Path::to_path_buf)
+                })
+                .unwrap_or_default();
+            self.doc_title.set(&folder, &doc.path, doc.dirty.get());
             let (words, chars) = doc.editor.statistics();
             self.status.set_text(&format!(
                 "{words} words · {chars} characters · {} min read{}",
@@ -2243,7 +2449,7 @@ Your Markdown files stay where they are.",
                 self.refresh_backlinks();
             }
         } else {
-            self.bar.set_title("", "", false);
+            self.doc_title.set(Path::new(""), Path::new(""), false);
             self.status.set_text("Open a note from the vault");
             for model in [
                 &self.outline_model,
@@ -2382,6 +2588,7 @@ Your Markdown files stay where they are.",
                     match result {
                         Ok((count, skipped)) => {
                             ui.export_launcher_index();
+                            ui.populate_tags();
                             #[cfg(feature = "ai")]
                             ui.reconcile_semantic();
                             for doc in ui.docs.borrow().iter() {
@@ -2541,7 +2748,28 @@ Your Markdown files stay where they are.",
     fn apply_typography(&self) {
         let p = prefs::get();
         let family = p.font_family.replace(['"', '\\', '\n', '\r'], "");
-        self.css.load_from_string(&format!("window.notes-window textview.notes-editor, window.notes-window .notes-reader {{font-family: \"{family}\", monospace; font-size: {}pt;}}",p.font_size.clamp(8.0,32.0)));
+        let size = p.font_size.clamp(8.0, 32.0);
+        // Source is code: the chosen font, monospace. Live and Reading are prose in the
+        // theme's interface font, without "monospace" in the list (fontconfig would put a
+        // monospace face first).
+        let prose = nyx_theme::look()
+            .font
+            .ui
+            .unwrap_or_default()
+            .replace(['"', '\\', '\n', '\r'], "");
+        let prose = prose
+            .split(',')
+            .map(str::trim)
+            .filter(|f| !f.is_empty())
+            .map(|f| format!("\"{f}\""))
+            .chain(["sans-serif".to_string()])
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.css.load_from_string(&format!(
+            "window.notes-window textview.notes-editor {{font-family: \"{family}\", monospace; font-size: {size}pt;}}\n\
+             window.notes-window textview.notes-editor.prose, window.notes-window .notes-reader {{font-family: {prose}; font-size: {}pt;}}",
+            size + 1.0
+        ));
         let palette = nyx_theme::palette();
         for doc in self.docs.borrow().iter() {
             doc.editor.set_writing_width(p.writing_width);
@@ -2551,8 +2779,12 @@ Your Markdown files stay where they are.",
             doc.editor
                 .view
                 .set_pixels_below_lines(p.line_spacing.clamp(0, 20));
-            doc.editor
-                .set_palette(&palette.accent, &palette.shadow, palette.light);
+            doc.editor.set_palette(
+                &palette.accent,
+                &palette.shadow,
+                &palette.dim_text,
+                palette.light,
+            );
         }
     }
     fn shortcuts(&self) {
@@ -2587,8 +2819,8 @@ fn text_list(height: i32) -> (gtk::StringList, gtk::ListView, gtk::ScrolledWindo
         let label = gtk::Label::new(None);
         label.set_xalign(0.0);
         label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        label.set_margin_top(5);
-        label.set_margin_bottom(5);
+        label.set_margin_top(2);
+        label.set_margin_bottom(2);
         label.set_margin_start(4);
         label.set_margin_end(4);
         item.set_child(Some(&label));
@@ -3030,7 +3262,14 @@ mod tests {
             descendants(&ui.tree)
                 .into_iter()
                 .filter_map(|w| w.downcast::<gtk::Expander>().ok())
-                .find(|e| e.label().as_deref() == Some(name))
+                .find(|e| {
+                    e.label_widget().is_some_and(|row| {
+                        descendants(&row)
+                            .into_iter()
+                            .filter_map(|w| w.downcast::<gtk::Label>().ok())
+                            .any(|l| l.has_css_class("tree-name") && l.text() == name)
+                    })
+                })
         }
         gtk::init().unwrap();
         nyx_core::app::init(nyx_core::app::App {

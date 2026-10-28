@@ -60,14 +60,21 @@ pub struct Parsed {
     pub tasks: Vec<Task>,
     pub hidden: Vec<Range<i32>>,
     pub reading: Vec<render::ReadBlock>,
+    /// The front matter's characters (not bytes), for editors that style it.
+    pub frontmatter: Option<Range<i32>>,
 }
 
 pub fn parse(source: &str) -> Parsed {
     let metadata = metadata::frontmatter(source);
     let body_start = metadata.range.as_ref().map_or(0, |r| r.end);
     let mut tags = metadata.tags.iter().cloned().collect::<BTreeSet<_>>();
+    let frontmatter = metadata
+        .range
+        .as_ref()
+        .map(|r| 0..source[..r.end].chars().count() as i32);
     let mut result = Parsed {
         metadata,
+        frontmatter,
         words: source.split_whitespace().count(),
         characters: source.chars().count(),
         ..Default::default()

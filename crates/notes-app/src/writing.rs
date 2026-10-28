@@ -10,7 +10,6 @@ impl Ui {
     pub(super) fn apply_writing(&self) {
         let p = prefs::get();
         self.nav.set_visible(!p.focus_mode);
-        self.bar.root.set_visible(!p.focus_mode);
         self.notebook.set_show_tabs(!p.focus_mode);
         self.secondary.set_show_tabs(!p.focus_mode);
         if p.focus_mode {

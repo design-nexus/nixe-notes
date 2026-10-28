@@ -30,9 +30,36 @@ window.notes-window .notes-heading-4, window.notes-window .notes-heading-5, wind
 window.notes-window .notes-callout { border-left: 3px solid @theme_accent; padding-left: 12px; }
 window.notes-window .notes-table-cell { padding: 6px 10px; }
 /* The status, quiet at the end of the command bar. */
-window.notes-window .notes-status { color: @theme_dim_text; font-size: 11.5px; margin: 0 8px; }
+window.notes-window .notes-status { color: @theme_dim_text; font-size: 11.5px; margin: 6px 8px 0 8px; }
 window.notes-window .nav-top { padding: 6px 8px 2px 8px; }
 /* Blended: the vault and the editor meet without a line. */
 window.notes-window paned > separator { background-color: @theme_bg; background-image: none; border: none; box-shadow: none; min-width: 1px; }
 /* Tabs: a soft pill for the open one, no underline. */
 window.notes-window notebook > header tab:checked { box-shadow: none; border: none; }
+/* The header's middle: the open note's folder, its name, the unsaved dot. */
+window.notes-window .doc-title-folder { color: @theme_dim_text; font-size: 13px; }
+window.notes-window .doc-title-name { font-weight: 600; font-size: 13.5px; }
+window.notes-window .doc-title-dot { min-width: 7px; min-height: 7px; border-radius: 4px; background: @theme_accent; }
+/* Tabs: pills with the note's icon; the close button stays small. */
+window.notes-window notebook > header { padding: 4px 10px 0 10px; }
+window.notes-window notebook > header tab { padding: 0 4px 0 10px; min-height: 30px; margin: 0 2px; }
+window.notes-window .note-tab-icon { color: @theme_dim_text; }
+window.notes-window notebook > header tab:checked .note-tab-icon { color: @theme_accent; }
+window.notes-window button.note-tab-close { min-width: 22px; min-height: 22px; padding: 0; opacity: 0.6; }
+window.notes-window button.note-tab-close:hover { opacity: 1; }
+/* The vault tree: folders with their icon and note count, notes by name. */
+window.notes-window .tree-expander > title { padding: 0 6px; min-height: 30px; border-radius: var(--nyx-radius-small); }
+window.notes-window .tree-expander > title:hover { background: @row_hover; }
+window.notes-window .tree-folder image { color: @theme_dim_text; }
+window.notes-window .tree-count { color: @theme_text_tertiary; font-size: 11.5px; }
+window.notes-window .tree-hash { color: @theme_dim_text; }
+window.notes-window .tree-tags { margin-top: 10px; }
+/* The header's ⋯ menu. */
+window.notes-window button.notes-menu-item, popover button.notes-menu-item { padding: 5px 12px; min-height: 28px; border-radius: var(--nyx-radius-small); }
+popover .notes-menu separator { margin: 4px 6px; }
+/* The inspector's lists sit on the surface, like the mockup's outline. */
+window.notes-window .inspector listview, window.notes-window .inspector list, window.notes-window .inspector scrolledwindow, window.notes-window .inspector viewport { background: transparent; }
+window.notes-window .inspector listview > row { border-radius: var(--nyx-radius-small); padding: 2px 8px; min-height: 0; }
+window.notes-window .inspector listview > row label { margin: 0; }
+window.notes-window .app-header menubutton > button { background: transparent; box-shadow: none; }
+window.notes-window .app-header menubutton > button:hover { background: alpha(@theme_text, 0.07); }
