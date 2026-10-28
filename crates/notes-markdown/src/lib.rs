@@ -62,6 +62,23 @@ pub struct Parsed {
     pub reading: Vec<render::ReadBlock>,
     /// The front matter's characters (not bytes), for editors that style it.
     pub frontmatter: Option<Range<i32>>,
+    /// Live layout, in characters: each heading's line and level, the empty lines
+    /// between blocks, and each task's marker. Editors size these across the whole
+    /// note, so line heights don't change as formatting follows the viewport.
+    pub heading_lines: Vec<(Range<i32>, u8)>,
+    pub blank_lines: Vec<i32>,
+    pub task_marks: Vec<TaskMark>,
+}
+/// A task's `- [ ] ` in characters: the bullet (`- `), the box (`[ ] `), and the
+/// text after it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TaskMark {
+    pub bullet: Range<i32>,
+    pub check: Range<i32>,
+    pub text: Range<i32>,
+    pub checked: bool,
+    /// The byte to hand to `editing::toggle_task`.
+    pub marker: usize,
 }
 
 pub fn parse(source: &str) -> Parsed {
@@ -172,6 +189,7 @@ pub fn parse(source: &str) -> Parsed {
             });
         }
     }
+    live_layout(source, body_start, &mut result);
     result.reading = render::blocks(source);
     result.tags = tags.into_iter().collect();
     map_character_ranges(source, &mut result);
@@ -345,6 +363,73 @@ fn map_character_ranges(source: &str, parsed: &mut Parsed) {
     }
 }
 
+/// Byte to character offsets through line starts, so many lookups stay linear.
+struct Lines {
+    starts: Vec<(usize, i32)>,
+}
+
+impl Lines {
+    fn new(source: &str) -> Self {
+        let mut starts = vec![(0, 0)];
+        let mut count = 0i32;
+        for (byte, c) in source.char_indices() {
+            count += 1;
+            if c == '\n' {
+                starts.push((byte + 1, count));
+            }
+        }
+        Self { starts }
+    }
+
+    fn character(&self, source: &str, byte: usize) -> i32 {
+        let i = self.starts.partition_point(|(b, _)| *b <= byte) - 1;
+        let (line, chars) = self.starts[i];
+        chars + character_offset(&source[line..], byte - line)
+    }
+}
+
+fn live_layout(source: &str, body_start: usize, result: &mut Parsed) {
+    let lines = Lines::new(source);
+    let line_end = |at: usize| source[at..].find('\n').map_or(source.len(), |n| at + n);
+    for h in &result.headings {
+        let end = line_end(h.offset);
+        result.heading_lines.push((
+            lines.character(source, h.offset)..lines.character(source, end),
+            h.level,
+        ));
+    }
+    let code: Vec<Range<usize>> = result
+        .spans
+        .iter()
+        .filter(|s| s.kind == Kind::CodeBlock)
+        .map(|s| s.range.clone())
+        .collect();
+    let mut at = body_start;
+    for line in source[body_start..].split_inclusive('\n') {
+        if line.trim().is_empty()
+            && line.ends_with('\n')
+            && !code.iter().any(|r| r.start < at && at < r.end)
+        {
+            result.blank_lines.push(lines.character(source, at));
+        }
+        at += line.len();
+    }
+    for task in &result.tasks {
+        let open = task.marker.start - 1;
+        let first = task.line.start + source[task.line.clone()].len()
+            - source[task.line.clone()].trim_start().len();
+        let after = (open + 3 + usize::from(source.as_bytes().get(open + 3) == Some(&b' ')))
+            .min(task.line.end);
+        result.task_marks.push(TaskMark {
+            bullet: lines.character(source, first)..lines.character(source, open),
+            check: lines.character(source, open)..lines.character(source, after),
+            text: lines.character(source, after)..lines.character(source, task.line.end),
+            checked: task.checked,
+            marker: task.marker.start,
+        });
+    }
+}
+
 /// GTK uses Unicode scalar offsets, while the parser uses UTF-8 byte offsets.
 pub fn character_offset(source: &str, byte: usize) -> i32 {
     let mut byte = byte.min(source.len());
@@ -361,6 +446,33 @@ pub fn character_offset(source: &str, byte: usize) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn live_layout_marks_headings_blank_lines_and_tasks() {
+        let source = "---\ntitle: é\n---\n# Tïtle\n\nText\n\n- [x] Done\n  - [ ] Open\n```\n\n```\n";
+        let parsed = parse(source);
+        let chars = |r: &Range<i32>| {
+            source
+                .chars()
+                .skip(r.start as usize)
+                .take((r.end - r.start) as usize)
+                .collect::<String>()
+        };
+        assert_eq!(parsed.heading_lines.len(), 1);
+        assert_eq!(chars(&parsed.heading_lines[0].0), "# Tïtle");
+        assert_eq!(parsed.heading_lines[0].1, 1);
+        // The blank line inside the code block keeps its height.
+        assert_eq!(parsed.blank_lines.len(), 2);
+        let tasks = &parsed.task_marks;
+        assert_eq!(tasks.len(), 2);
+        assert_eq!(chars(&tasks[0].bullet), "- ");
+        assert_eq!(chars(&tasks[0].check), "[x] ");
+        assert_eq!(chars(&tasks[0].text), "Done");
+        assert!(tasks[0].checked);
+        assert_eq!(chars(&tasks[1].bullet), "- ");
+        assert_eq!(chars(&tasks[1].text), "Open");
+        assert!(!tasks[1].checked);
+    }
+
     #[test]
     fn obsidian_metadata_links_and_exclusions() {
         let source = "---\r\naliases: [Research, 'A title']\r\ntags: [project/rust, notes]\r\nstatus: draft\r\n---\r\n# Café 🦀\r\n[[Other#Heading|label]] ![[Chapter#^block]] [md](../Other.md#Heading)\nTag #nested/tag and escaped \\#not-tag.\nText ^block-id\n`[[inline]] #inline`\n```md\n[[fenced]] #fenced\n```\n";

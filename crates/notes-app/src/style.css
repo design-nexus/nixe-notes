@@ -19,7 +19,6 @@ window.notes-window notebook > header { background: @theme_bg; border: none; box
 window.notes-window notebook > header tab { padding: 4px 10px; margin: 4px 2px; background: transparent; border: none; border-radius: var(--nyx-radius-small); color: @theme_dim_text; }
 window.notes-window notebook > header tab:hover { background: @row_hover; }
 window.notes-window notebook > header tab:checked { background: alpha(@theme_text, 0.07); color: @theme_text; }
-window.notes-window expander title { min-height: 32px; }
 window.notes-window scrollbar { min-width: 0; min-height: 0; opacity: 0; }
 window.notes-window .notes-reader { background: @theme_bg; color: @theme_text; }
 window.notes-window .notes-reader row { padding: 0; background: @theme_bg; }
@@ -29,9 +28,6 @@ window.notes-window .notes-heading-3 { font-size: 1.2em; font-weight: 700; }
 window.notes-window .notes-heading-4, window.notes-window .notes-heading-5, window.notes-window .notes-heading-6 { font-weight: 700; }
 window.notes-window .notes-callout { border-left: 3px solid @theme_accent; padding-left: 12px; }
 window.notes-window .notes-table-cell { padding: 6px 10px; }
-/* The status, quiet at the end of the command bar. */
-window.notes-window .notes-status { color: @theme_dim_text; font-size: 11.5px; margin: 6px 8px 0 8px; }
-window.notes-window .nav-top { padding: 6px 8px 2px 8px; }
 /* Blended: the vault and the editor meet without a line. */
 window.notes-window paned > separator { background-color: @theme_bg; background-image: none; border: none; box-shadow: none; min-width: 1px; }
 /* Tabs: a soft pill for the open one, no underline. */
@@ -48,8 +44,6 @@ window.notes-window notebook > header tab:checked .note-tab-icon { color: @theme
 window.notes-window button.note-tab-close { min-width: 22px; min-height: 22px; padding: 0; opacity: 0.6; }
 window.notes-window button.note-tab-close:hover { opacity: 1; }
 /* The vault tree: folders with their icon and note count, notes by name. */
-window.notes-window .tree-expander > title { padding: 0 6px; min-height: 30px; border-radius: var(--nyx-radius-small); }
-window.notes-window .tree-expander > title:hover { background: @row_hover; }
 window.notes-window .tree-folder image { color: @theme_dim_text; }
 window.notes-window .tree-count { color: @theme_text_tertiary; font-size: 11.5px; }
 window.notes-window .tree-hash { color: @theme_dim_text; }
@@ -63,3 +57,100 @@ window.notes-window .inspector listview > row { border-radius: var(--nyx-radius-
 window.notes-window .inspector listview > row label { margin: 0; }
 window.notes-window .app-header menubutton > button { background: transparent; box-shadow: none; }
 window.notes-window .app-header menubutton > button:hover { background: alpha(@theme_text, 0.07); }
+
+/* ---- Matched to the 2.0 mockup ---- */
+
+/* Header: equal 32 px buttons; a toggle that's on is tinted with the accent. */
+window.notes-window .app-header button.bar-button,
+window.notes-window .app-header menubutton.bar-button > button {
+  min-width: 32px; min-height: 32px; padding: 0; border-radius: 7px;
+  background: transparent; box-shadow: none; color: @theme_dim_text;
+}
+window.notes-window .app-header button.bar-button:hover,
+window.notes-window .app-header menubutton.bar-button > button:hover { background: alpha(@theme_text, 0.06); color: @theme_text; }
+window.notes-window .app-header button.bar-button:checked { background: alpha(@theme_accent, 0.16); color: @theme_accent; }
+window.notes-window .app-header button.bar-button:checked:hover { background: alpha(@theme_accent, 0.22); }
+window.notes-window .app-header { min-height: 46px; }
+
+/* Search: a 32 px field with room around it and its key. */
+window.notes-window .header-search {
+  min-height: 32px; padding: 0 6px 0 2px; border-radius: 8px; background: @field;
+}
+window.notes-window .header-search:focus-within { background: alpha(@theme_text, 0.07); }
+window.notes-window .header-search entry,
+window.notes-window .header-search entry:focus-within {
+  background: transparent; border: none; box-shadow: none; outline: none; min-height: 30px; font-size: 12.5px;
+}
+window.notes-window .header-search entry > image { color: @theme_text_tertiary; -gtk-icon-size: 15px; }
+window.notes-window .key-hint { font-size: 11px; color: @theme_text_tertiary; padding: 1px 5px; border-radius: 5px; background: alpha(@theme_text, 0.04); }
+
+/* The header's middle. */
+window.notes-window .doc-title-folder { color: @theme_text_tertiary; font-size: 13px; }
+window.notes-window .doc-title-name { font-weight: 500; font-size: 13px; }
+
+/* Sidebar: starts right under the header, level with the tabs. */
+window.notes-window .settings-navigation { padding: 8px; min-width: 0; }
+window.notes-window .settings-navigation .nav-group.tree-group { margin: 14px 4px 6px 10px; padding: 0; font-size: 11px; }
+window.notes-window .tree-expander title,
+window.notes-window .settings-navigation button.nav-item.tree-item,
+window.notes-window .tree-tags button.nav-item {
+  min-height: 30px; padding: 0 10px 0 6px; border-radius: 7px; color: @theme_dim_text; font-size: 13px;
+}
+window.notes-window .tree-expander title > expander { -gtk-icon-size: 12px; min-width: 12px; min-height: 12px; color: @theme_text_tertiary; margin-right: 6px; }
+window.notes-window .tree-expander title:hover,
+window.notes-window button.nav-item.tree-item:hover { background: @row_hover; color: @theme_text; }
+/* A note lines up under its folder's icon: past the arrow's 12 px and its gap. */
+window.notes-window .tree-note { margin-left: 18px; }
+window.notes-window .tree-note image, window.notes-window .tree-folder image { -gtk-icon-size: 15px; color: @theme_dim_text; }
+window.notes-window .tree-name { color: @theme_dim_text; font-size: 13px; }
+window.notes-window .tree-expander title:hover .tree-name,
+window.notes-window button.nav-item.tree-item:hover .tree-name,
+window.notes-window button.nav-item.tree-item.active .tree-name { color: @theme_text; }
+window.notes-window button.nav-item.tree-item.active { background: alpha(@theme_accent, 0.14); box-shadow: none; color: @theme_text; }
+window.notes-window button.nav-item.tree-item.active image { color: @theme_accent; }
+window.notes-window .tree-count { color: @theme_text_tertiary; font-size: 11.5px; }
+window.notes-window .tree-hash { color: @theme_text_tertiary; }
+window.notes-window .settings-navigation .tree-tags button.nav-item { padding: 0 10px; min-height: 30px; }
+
+/* Tabs: compact pills that fit their name. */
+window.notes-window notebook > header { padding: 8px 8px 2px 8px; }
+window.notes-window notebook > header tab { min-height: 28px; padding: 0 4px 0 10px; margin: 0 2px 0 0; border-radius: 7px; font-size: 12.5px; color: @theme_dim_text; }
+window.notes-window notebook > header tab:checked { background: alpha(@theme_text, 0.05); color: @theme_text; }
+window.notes-window .note-tab-icon { -gtk-icon-size: 14px; }
+window.notes-window button.note-tab-close { min-width: 18px; min-height: 18px; border-radius: 4px; color: @theme_text_tertiary; }
+window.notes-window button.note-tab-close image { -gtk-icon-size: 11px; }
+
+/* Live: front matter chips, task checkboxes. */
+window.notes-window .property-chip { min-height: 24px; padding: 0 9px; border-radius: 6px; background: alpha(@theme_text, 0.04); font-size: 12px; }
+window.notes-window .property-key { color: @theme_dim_text; }
+window.notes-window .property-value { color: @theme_text; font-weight: 500; }
+window.notes-window .property-chip.tag { background: alpha(@theme_accent, 0.10); }
+window.notes-window .property-chip.tag .property-value { color: @theme_accent; font-weight: 400; }
+window.notes-window button.task-check {
+  min-width: 13px; min-height: 13px; padding: 0; border-radius: 5px;
+  border: 1.5px solid @theme_text_tertiary; background: transparent; box-shadow: none;
+}
+window.notes-window button.task-check image { -gtk-icon-size: 12px; color: transparent; }
+window.notes-window button.task-check.checked { background: @theme_accent; border-color: @theme_accent; }
+window.notes-window button.task-check.checked image { color: @theme_bg; }
+
+/* The editor's foot: quiet text, no bar. */
+window.notes-window .notes-foot { min-height: 28px; padding: 0 12px 0 13px; }
+window.notes-window .notes-status { color: @theme_dim_text; font-size: 11.5px; font-feature-settings: "tnum"; }
+window.notes-window .save-dot { min-width: 7px; min-height: 7px; border-radius: 4px; background: @theme_accent; }
+
+/* Inspector: a quiet segmented switch, an outline, and backlink cards. */
+window.notes-window .inspector { min-width: 268px; }
+window.notes-window .inspector-head { padding: 10px 10px 0 10px; }
+window.notes-window .inspector-segments { background: @field; border-radius: 8px; padding: 2px; }
+window.notes-window button.inspector-segment { min-height: 26px; font-size: 12.5px; font-weight: 400; border-radius: 6px; }
+window.notes-window button.inspector-segment:checked { background: @theme_raised; color: @theme_text; box-shadow: 0 1px 2px alpha(black, 0.3); }
+window.notes-window .inspector-section { padding: 4px 10px 6px 10px; }
+window.notes-window .inspector-heading { font-size: 11px; letter-spacing: 0.06em; color: @theme_text_tertiary; margin: 12px 6px 2px 6px; }
+window.notes-window .inspector listview > row { min-height: 30px; padding: 0 8px; border-radius: 6px; font-size: 12.5px; color: @theme_dim_text; }
+window.notes-window .inspector listview > row:hover { background: @row_hover; color: @theme_text; }
+window.notes-window .inspector listview > row:selected { background: @row_hover; color: @theme_text; }
+window.notes-window .inspector listview.cards > row { padding: 0; margin-bottom: 6px; background: transparent; }
+window.notes-window .link-card { padding: 10px 12px; border-radius: 11px; background: @theme_card; }
+window.notes-window .link-card-title { font-weight: 500; font-size: 12.5px; color: @theme_text; }
+window.notes-window .link-card-text { font-size: 12px; color: @theme_dim_text; }

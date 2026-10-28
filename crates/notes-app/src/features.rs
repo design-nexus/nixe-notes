@@ -614,6 +614,7 @@ impl Ui {
             self.active_pane.set(false);
         }
         prefs::update(|p| p.split_enabled = enabled);
+        self.split_toggle.set_active(enabled);
         self.update_active();
     }
     pub(super) fn move_tab(&self, doc: &Doc, right: bool) {

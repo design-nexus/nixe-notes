@@ -20,6 +20,29 @@ pub enum Mode {
 }
 
 type ParsedCallback = Box<dyn Fn(&Parsed)>;
+
+/// The tags that shape Live's lines.
+struct Layout {
+    /// Level 1, 2, and 3 and below.
+    headings: [gtk::TextTag; 3],
+    blank: gtk::TextTag,
+    bullet: gtk::TextTag,
+    check: gtk::TextTag,
+    done: gtk::TextTag,
+    hidden_properties: gtk::TextTag,
+    /// Code blocks, a little smaller than prose, like the mockup's cards.
+    code: gtk::TextTag,
+    /// A task's first line, indented to make room for its checkbox.
+    task: gtk::TextTag,
+    /// Room under the title (or above the first line) for the property chips.
+    chip_room: gtk::TextTag,
+}
+
+/// Space kept for the chips' row, in pixels.
+const CHIP_ROOM: i32 = 40;
+/// A task's checkbox and the gap after it, in pixels.
+const CHECK: i32 = 16;
+const CHECK_GAP: i32 = 10;
 pub struct Editor {
     pub buffer: sourceview5::Buffer,
     pub view: sourceview5::View,
@@ -35,8 +58,17 @@ pub struct Editor {
     writable: Cell<bool>,
     hidden_tag: gtk::TextTag,
     fold_tag: gtk::TextTag,
-    /// Live: the front matter, small and quiet above the note.
+    /// Live: the front matter, small and quiet while you edit it.
     frontmatter_tag: gtk::TextTag,
+    /// Live: what is sized across the whole note rather than the viewport, so line
+    /// heights stay put while you scroll (see [`Editor::apply_layout`]).
+    layout: Layout,
+    layout_revision: Cell<u64>,
+    /// Live: one checkbox drawn over each visible task's `[ ]`.
+    checks: RefCell<Vec<(gtk::Button, Rc<Cell<usize>>)>>,
+    /// Live: the front matter as chips under the title, until you choose to edit it.
+    chips: gtk::Box,
+    editing_properties: Cell<bool>,
     fold_marks: RefCell<Vec<(gtk::TextMark, gtk::TextMark)>>,
     pub revision: Cell<u64>,
     live: Cell<bool>,
@@ -86,15 +118,16 @@ impl Editor {
         ] {
             let tag = gtk::TextTag::builder().name(name).build();
             match kind {
-                Kind::Heading => {
-                    tag.set_weight(700);
-                    // Keep line geometry stable when formatting enters/leaves the viewport.
-                }
+                // Sizes come from the whole-note layout tags.
+                Kind::Heading => tag.set_weight(600),
                 Kind::Strong => tag.set_weight(700),
                 Kind::Emphasis => tag.set_style(pango::Style::Italic),
                 Kind::Strike => tag.set_strikethrough(true),
                 Kind::Link => tag.set_underline(pango::Underline::Single),
                 Kind::Code | Kind::CodeBlock => tag.set_family(Some("monospace")),
+            }
+            if kind == Kind::Code {
+                tag.set_scale(0.9);
             }
             buffer.tag_table().add(&tag);
             tags.push((kind, tag));
@@ -137,6 +170,52 @@ impl Editor {
             .scale(0.85)
             .build();
         buffer.tag_table().add(&frontmatter_tag);
+        let tag = |name: &str| {
+            let tag = gtk::TextTag::builder().name(name).build();
+            buffer.tag_table().add(&tag);
+            tag
+        };
+        let layout = Layout {
+            headings: [tag("live-h1"), tag("live-h2"), tag("live-h3")],
+            blank: tag("live-blank"),
+            bullet: tag("live-task-bullet"),
+            check: tag("live-task-check"),
+            done: tag("live-task-done"),
+            hidden_properties: tag("live-properties-hidden"),
+            code: tag("live-code"),
+            task: tag("live-task"),
+            chip_room: tag("live-chip-room"),
+        };
+        for (tag, scale, above, below) in [
+            (&layout.headings[0], 1.8, 4, 8),
+            (&layout.headings[1], 1.12, 18, 4),
+            (&layout.headings[2], 1.0, 12, 2),
+        ] {
+            tag.set_scale(scale);
+            tag.set_pixels_above_lines(above);
+            tag.set_pixels_below_lines(below);
+        }
+        // An empty line between blocks is a small gap, like a paragraph margin.
+        layout.blank.set_scale(0.3);
+        layout.blank.set_pixels_above_lines(0);
+        layout.blank.set_pixels_below_lines(0);
+        layout.bullet.set_invisible(true);
+        // The checkbox is drawn in the room the indent leaves.
+        layout.check.set_invisible(true);
+        layout.task.set_indent(CHECK + CHECK_GAP);
+        layout.code.set_scale(0.86);
+        layout.code.set_pixels_above_lines(0);
+        layout.code.set_pixels_below_lines(1);
+        layout.code.set_pixels_inside_wrap(1);
+        layout.code.set_indent(14);
+        layout.done.set_strikethrough(true);
+        layout.hidden_properties.set_invisible(true);
+        layout.chip_room.set_pixels_below_lines(CHIP_ROOM);
+        let chips = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        chips.add_css_class("property-chips");
+        chips.set_tooltip_text(Some("Click to edit the properties"));
+        chips.set_visible(false);
+        view.add_overlay(&chips, 0, 0);
         let editor = Rc::new(Self {
             buffer,
             view,
@@ -153,6 +232,11 @@ impl Editor {
             hidden_tag,
             fold_tag,
             frontmatter_tag,
+            layout,
+            layout_revision: Cell::new(u64::MAX),
+            checks: RefCell::new(Vec::new()),
+            chips,
+            editing_properties: Cell::new(false),
             fold_marks: RefCell::new(Vec::new()),
             revision: Cell::new(0),
             live: Cell::new(false),
@@ -189,15 +273,21 @@ impl Editor {
                 }
             }
             let columns = editor.writing_width.get();
-            let glyph = view.create_pango_layout(Some("M")).pixel_size().0;
-            let margin = if columns > 0 {
-                ((view.width() - columns * glyph) / 2).max(16)
+            // A column is the width of "0", like CSS's `ch`.
+            let glyph = view.create_pango_layout(Some("0")).pixel_size().0;
+            // The text starts a fixed step from the sidebar; a writing width only
+            // limits how far right it runs, the rest of the room stays on the right.
+            let left = if view.width() < 600 { 24 } else { 48 };
+            let right = if columns > 0 {
+                (view.width() - left - columns * glyph).max(left)
             } else {
-                28
+                left
             };
-            if view.left_margin() != margin {
-                view.set_left_margin(margin);
-                view.set_right_margin(margin);
+            if view.left_margin() != left || view.right_margin() != right {
+                view.set_left_margin(left);
+                view.set_right_margin(right);
+                editor.render_cache.borrow_mut().clear();
+                editor.schedule_render();
             }
             glib::ControlFlow::Continue
         });
@@ -298,6 +388,14 @@ impl Editor {
             }
         });
         editor.view.add_controller(click);
+        let chip_click = gtk::GestureClick::new();
+        let weak = Rc::downgrade(&editor);
+        chip_click.connect_released(move |_, _, _, _| {
+            if let Some(e) = weak.upgrade() {
+                e.edit_properties();
+            }
+        });
+        editor.chips.add_controller(chip_click);
         editor.schedule();
         editor
     }
@@ -368,6 +466,12 @@ impl Editor {
         } else {
             self.view.remove_css_class("prose");
         }
+        // Prose spacing: wrapped lines breathe, blocks sit a little apart.
+        let (wrap, above, below) = if live { (7, 3, 3) } else { (0, 0, 0) };
+        self.view.set_pixels_inside_wrap(wrap);
+        self.view.set_pixels_above_lines(above);
+        self.view.set_pixels_below_lines(below);
+        self.clear_layout();
         self.apply(&self.parsed.borrow());
     }
     pub fn refresh_reading(&self) {
@@ -537,10 +641,13 @@ impl Editor {
     }
     pub fn set_palette(&self, accent: &str, background: &str, dim: &str, light: bool) {
         self.frontmatter_tag.set_foreground(Some(dim));
+        self.layout.done.set_foreground(Some(dim));
         for (kind, tag) in &self.tags {
             match kind {
                 Kind::Link => tag.set_foreground(Some(accent)),
-                Kind::Code | Kind::CodeBlock => tag.set_background(Some(background)),
+                Kind::Code => tag.set_background(Some(background)),
+                // A code block reads as one card, edge to edge of the column.
+                Kind::CodeBlock => tag.set_paragraph_background(Some(background)),
                 _ => {}
             }
         }
@@ -700,6 +807,270 @@ impl Editor {
             false
         }
     }
+    /// Show the front matter's source to edit it; it folds back into chips once the
+    /// cursor leaves it.
+    pub fn edit_properties(&self) {
+        let Some(range) = self.parsed.borrow().frontmatter.clone() else {
+            return;
+        };
+        self.editing_properties.set(true);
+        self.layout_revision.set(u64::MAX);
+        // After the opening `---`.
+        let mut iter = self.buffer.iter_at_offset(range.start);
+        iter.forward_line();
+        self.buffer.place_cursor(&iter);
+        self.view.grab_focus();
+        self.render_cache.borrow_mut().clear();
+        self.apply(&self.parsed.borrow());
+    }
+
+    fn clear_layout(&self) {
+        let (a, b) = self.buffer.bounds();
+        for tag in self.layout.headings.iter().chain([
+            &self.layout.blank,
+            &self.layout.bullet,
+            &self.layout.check,
+            &self.layout.done,
+            &self.layout.hidden_properties,
+            &self.layout.chip_room,
+            &self.layout.code,
+            &self.layout.task,
+        ]) {
+            self.buffer.remove_tag(tag, &a, &b);
+        }
+        self.layout_revision.set(u64::MAX);
+        self.chips.set_visible(false);
+        for (check, _) in self.checks.borrow().iter() {
+            check.set_visible(false);
+        }
+    }
+
+    /// Size headings and empty lines, hide task bullets, and fold the front matter
+    /// into chips, across the whole note once per parse: changing line heights only
+    /// near the viewport would make the text jump as you scroll.
+    fn apply_layout(&self, parsed: &Parsed) {
+        // Leaving the front matter folds it back.
+        if self.editing_properties.get()
+            && let Some(range) = &parsed.frontmatter
+            && !(range.start..=range.end).contains(&self.buffer.cursor_position())
+        {
+            self.editing_properties.set(false);
+            self.layout_revision.set(u64::MAX);
+        }
+        if self.layout_revision.get() == self.parsed_revision.get() {
+            return;
+        }
+        self.clear_layout();
+        self.layout_revision.set(self.parsed_revision.get());
+        let iter = |at: i32| self.buffer.iter_at_offset(at);
+        let line_end = |at: i32| {
+            let mut i = iter(at);
+            if !i.ends_line() {
+                i.forward_to_line_end();
+            }
+            i
+        };
+        for (range, level) in &parsed.heading_lines {
+            let tag = &self.layout.headings[(*level as usize).clamp(1, 3) - 1];
+            self.buffer.apply_tag(tag, &iter(range.start), &line_end(range.start));
+        }
+        for at in &parsed.blank_lines {
+            self.buffer.apply_tag(&self.layout.blank, &iter(*at), &iter(*at + 1));
+        }
+        for span in parsed.spans.iter().filter(|s| s.kind == Kind::CodeBlock) {
+            self.buffer.apply_tag(
+                &self.layout.code,
+                &iter(span.characters.start),
+                &iter(span.characters.end),
+            );
+        }
+        for task in &parsed.task_marks {
+            self.buffer
+                .apply_tag(&self.layout.task, &iter(task.bullet.start), &line_end(task.bullet.start));
+            self.buffer
+                .apply_tag(&self.layout.bullet, &iter(task.bullet.start), &iter(task.bullet.end));
+            self.buffer
+                .apply_tag(&self.layout.check, &iter(task.check.start), &iter(task.check.end));
+            if task.checked {
+                self.buffer
+                    .apply_tag(&self.layout.done, &iter(task.text.start), &iter(task.text.end));
+            }
+        }
+        self.fill_chips(parsed);
+        if let Some(range) = &parsed.frontmatter
+            && !self.editing_properties.get()
+            && self.chips.first_child().is_some()
+        {
+            self.buffer
+                .apply_tag(&self.layout.hidden_properties, &iter(range.start), &iter(range.end));
+            // Typing must never land in hidden text.
+            if self.buffer.cursor_position() < range.end && !self.buffer.has_selection() {
+                self.buffer.place_cursor(&iter(range.end));
+            }
+            // The chips go under the title when the note starts with one, else above
+            // the first line.
+            let blanks = parsed.blank_lines.iter().filter(|b| **b >= range.end).count();
+            let mut first = iter(range.end);
+            for _ in 0..blanks {
+                if first.ends_line() && first.starts_line() {
+                    first.forward_line();
+                } else {
+                    break;
+                }
+            }
+            let title = parsed
+                .heading_lines
+                .iter()
+                .find(|(r, l)| *l == 1 && r.start == first.offset())
+                .is_some();
+            self.layout.chip_room.set_pixels_below_lines(if title { CHIP_ROOM } else { 0 });
+            self.layout.chip_room.set_pixels_above_lines(if title { 0 } else { CHIP_ROOM });
+            self.buffer
+                .apply_tag(&self.layout.chip_room, &first, &line_end(first.offset()));
+            self.chips.set_visible(true);
+        }
+    }
+
+    fn fill_chips(&self, parsed: &Parsed) {
+        while let Some(child) = self.chips.first_child() {
+            self.chips.remove(&child);
+        }
+        let chip = |key: Option<&str>, value: &str, accent: bool| {
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+            row.add_css_class("property-chip");
+            if accent {
+                row.add_css_class("tag");
+            }
+            if let Some(key) = key {
+                let k = gtk::Label::new(Some(key));
+                k.add_css_class("property-key");
+                row.append(&k);
+            }
+            let v = gtk::Label::new(Some(value));
+            v.add_css_class("property-value");
+            row.append(&v);
+            self.chips.append(&row);
+        };
+        let meta = &parsed.metadata;
+        let mut shown = 0;
+        for (key, value) in &meta.properties {
+            if shown == 5 || matches!(key.as_str(), "tags" | "tag" | "aliases" | "alias") {
+                continue;
+            }
+            let mut name = key.replace(['_', '-'], " ");
+            if let Some(c) = name.get(..1) {
+                name = c.to_uppercase() + &name[1..];
+            }
+            chip(Some(&name), value.trim_matches(['"', '\'']), false);
+            shown += 1;
+        }
+        for tag in meta.tags.iter().take(6) {
+            chip(None, &format!("#{tag}"), true);
+        }
+        if self.chips.first_child().is_some()
+            && let Ok(modified) = std::fs::metadata(&*self.source_path.borrow())
+                .and_then(|m| m.modified())
+            && let Ok(since) = modified.duration_since(std::time::UNIX_EPOCH)
+            && let Ok(when) = glib::DateTime::from_unix_local(since.as_secs() as i64)
+            && let Ok(now) = glib::DateTime::now_local()
+        {
+            let format = if when.ymd() == now.ymd() {
+                "Today %H:%M"
+            } else if when.year() == now.year() {
+                "%b %-d"
+            } else {
+                "%b %-d, %Y"
+            };
+            if let Ok(text) = when.format(format) {
+                chip(Some("Updated"), &text, false);
+            }
+        }
+    }
+
+    /// Put the chips and the checkboxes where their text is laid out. Only lines in
+    /// the viewport have settled positions, so only their tasks get a checkbox.
+    fn place_overlays(&self, parsed: &Parsed, first: i32, last: i32) {
+        if self.chips.is_visible()
+            && let Some((_, range)) = self.layout.chip_room_range(&self.buffer)
+        {
+            let rect = self.view.iter_location(&range);
+            let (y, height) = self.view.line_yrange(&range);
+            let top = if self.layout.chip_room.pixels_below_lines() > 0 {
+                y + height - CHIP_ROOM + 6
+            } else {
+                y + 6
+            };
+            self.view.move_overlay(&self.chips, rect.x(), top);
+        }
+        let mut checks = self.checks.borrow_mut();
+        let mut used = 0;
+        for task in &parsed.task_marks {
+            if task.check.start < first || task.check.start > last {
+                continue;
+            }
+            if used == checks.len() {
+                let button = gtk::Button::new();
+                button.add_css_class("task-check");
+                button.set_focusable(false);
+                button.set_can_focus(false);
+                button.set_child(Some(&gtk::Image::from_icon_name("object-select-symbolic")));
+                let marker = Rc::new(Cell::new(0));
+                let buffer = self.buffer.clone();
+                let at = marker.clone();
+                let writable = self.view.clone();
+                button.connect_clicked(move |_| {
+                    if !writable.is_editable() {
+                        return;
+                    }
+                    let text = buffer.text(&buffer.start_iter(), &buffer.end_iter(), true);
+                    if let Some(edit) = notes_markdown::editing::toggle_task(&text, at.get()) {
+                        let mut a = buffer
+                            .iter_at_offset(notes_markdown::character_offset(&text, edit.range.start));
+                        let mut b = buffer
+                            .iter_at_offset(notes_markdown::character_offset(&text, edit.range.end));
+                        buffer.begin_user_action();
+                        buffer.delete(&mut a, &mut b);
+                        buffer.insert(&mut a, &edit.replacement);
+                        buffer.end_user_action();
+                    }
+                });
+                self.view.add_overlay(&button, 0, 0);
+                checks.push((button, marker));
+            }
+            let (button, marker) = &checks[used];
+            used += 1;
+            marker.set(task.marker);
+            if task.checked {
+                button.add_css_class("checked");
+            } else {
+                button.remove_css_class("checked");
+            }
+            // In the indent's room at the line's start, past any leading spaces of a
+            // nested task. (A position after hidden text still counts its width.)
+            let mut start = self.buffer.iter_at_offset(task.bullet.start);
+            start.set_line_offset(0);
+            let rect = self.view.iter_location(&start);
+            let spaces = self
+                .buffer
+                .text(&start, &self.buffer.iter_at_offset(task.bullet.start), false);
+            let lead = if spaces.is_empty() {
+                0
+            } else {
+                self.view.create_pango_layout(Some(&spaces)).pixel_size().0
+            };
+            self.view.move_overlay(
+                button,
+                // The line's start already counts the indent.
+                rect.x() + lead - CHECK - CHECK_GAP,
+                rect.y() + (rect.height() - CHECK) / 2,
+            );
+            button.set_visible(true);
+        }
+        for (button, _) in checks.iter().skip(used) {
+            button.set_visible(false);
+        }
+    }
+
     fn schedule_render(self: &Rc<Self>) {
         if self.render_pending.replace(true) {
             return;
@@ -777,6 +1148,8 @@ impl Editor {
             .max(start + 1)
             .min(start + 32768)
             .min(self.buffer.char_count());
+        self.apply_layout(parsed);
+        self.place_overlays(parsed, first, last);
         let spans = parsed
             .spans
             .iter()
@@ -806,7 +1179,9 @@ impl Editor {
                 );
             }
         }
-        if let Some(range) = &parsed.frontmatter {
+        if let Some(range) = &parsed.frontmatter
+            && self.editing_properties.get()
+        {
             let (from, to) = (range.start.max(start), range.end.min(end));
             if from < to {
                 self.buffer.apply_tag(
@@ -841,6 +1216,17 @@ impl Editor {
             self.buffer.create_mark(None, &b, false),
         ));
         *self.render_cache.borrow_mut() = spans;
+    }
+}
+
+impl Layout {
+    /// The line carrying the chips' room, as (start, start).
+    fn chip_room_range(&self, buffer: &sourceview5::Buffer) -> Option<(gtk::TextIter, gtk::TextIter)> {
+        let mut iter = buffer.start_iter();
+        if !iter.starts_tag(Some(&self.chip_room)) && !iter.forward_to_tag_toggle(Some(&self.chip_room)) {
+            return None;
+        }
+        Some((iter, iter))
     }
 }
 

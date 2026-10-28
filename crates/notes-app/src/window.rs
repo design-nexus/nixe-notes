@@ -74,6 +74,7 @@ struct Ui {
     overlay: gtk::Overlay,
     nav: gtk::Box,
     split: gtk::Paned,
+    #[cfg_attr(not(test), allow(dead_code))]
     head: gtk::Box,
     /// The 2.0 header; its subtitle is the vault's name.
     header: nyx_ui::chrome::AppHeader,
@@ -117,6 +118,11 @@ struct Ui {
     suite_proposals: RefCell<std::collections::HashMap<String, serde_json::Value>>,
     pending_jumps: RefCell<std::collections::HashMap<PathBuf, Jump>>,
     status: gtk::Label,
+    save_state: gtk::Label,
+    split_toggle: gtk::ToggleButton,
+    /// The tree's note rows by path, to mark the open note.
+    tree_notes: RefCell<std::collections::HashMap<PathBuf, glib::WeakRef<gtk::Button>>>,
+    backlinks_heading: Option<gtk::Label>,
     notice: gtk::Label,
     notice_row: gtk::Box,
     resolve_button: gtk::Button,
@@ -382,15 +388,11 @@ impl Ui {
         body.set_vexpand(true);
         let nav = widgets::vbox(0);
         nav.add_css_class("settings-navigation");
-        nav.set_width_request(250);
+        nav.set_width_request(SIDEBAR);
+        // The sidebar's toggle sits in the header, after the app's name.
         let head = widgets::hbox(0);
-        head.add_css_class("nav-top");
-        let collapse =
-            widgets::bar_button("sidebar-show-symbolic", "Collapse the sidebar (Ctrl+B)");
-        collapse.set_hexpand(true);
-        collapse.set_halign(gtk::Align::End);
+        let collapse = widgets::bar_button("sidebar-show-symbolic", "Toggle the sidebar (Ctrl+B)");
         head.append(&collapse);
-        nav.append(&head);
         let tree = widgets::vbox(0);
         let tags = widgets::vbox(0);
         tags.add_css_class("tree-tags");
@@ -458,7 +460,7 @@ impl Ui {
             .icon_name("view-more-symbolic")
             .tooltip_text("Menu (F10)")
             .build();
-        file_menu.add_css_class("flat");
+        file_menu.add_css_class("bar-button");
         file_menu.set_popover(Some(&popover));
         for (i, widget) in [
             open.upcast_ref::<gtk::Widget>(),
@@ -484,29 +486,54 @@ impl Ui {
             menu.append(widget);
         }
         menu.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
-        let split_button = widgets::bar_button("view-dual-symbolic", "Split editor (Ctrl+\\)");
+        let split_button = gtk::ToggleButton::new();
+        split_button.set_icon_name("view-dual-symbolic");
+        split_button.set_tooltip_text(Some("Split editor (Ctrl+\\)"));
+        split_button.add_css_class("bar-button");
+        split_button.set_valign(gtk::Align::Center);
+        split_button.set_active(prefs::get().split_enabled);
+        // The editor's foot: the note's words and the cursor, then the format and
+        // whether it's saved; or what the vault is doing.
         let status = gtk::Label::new(Some("Open a vault to begin"));
         status.add_css_class("notes-status");
         status.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        status.set_max_width_chars(48);
         status.set_xalign(0.0);
-        // The sidebar's foot: the open note's words and whether it's saved, or what the
-        // vault is doing.
-        nav.append(&status);
+        status.set_hexpand(true);
+        let save_state = gtk::Label::new(None);
+        save_state.add_css_class("notes-status");
+        let save_dot = widgets::hbox(0);
+        save_dot.add_css_class("save-dot");
+        save_dot.set_valign(gtk::Align::Center);
+        let foot = widgets::hbox(14);
+        foot.add_css_class("notes-foot");
+        foot.append(&status);
+        foot.append(&widgets::label("Markdown", "notes-status"));
+        let saved = widgets::hbox(6);
+        saved.append(&save_dot);
+        saved.append(&save_state);
+        foot.append(&saved);
         let doc_title = DocTitle::new();
         let inspector = Inspector::new();
         let (outline_model, outline_view, outline_scroll) = text_list(240);
-        inspector
-            .segment("Outline")
-            .section("Headings")
-            .add(&outline_scroll);
+        let (backlinks_model, backlinks_view, backlinks_scroll) = card_list(260);
+        let outline = inspector.segment("Outline");
+        outline.section("On this page").add(&outline_scroll);
+        outline.section("Backlinks").add(&backlinks_scroll);
+        // The outline and the cards take the room they need, so Backlinks follows the
+        // headings directly.
+        for list in [&outline_scroll, &backlinks_scroll] {
+            list.set_min_content_height(0);
+            list.set_propagate_natural_height(true);
+        }
+        let backlinks_heading = backlinks_scroll
+            .parent()
+            .and_then(|section| section.first_child())
+            .and_downcast::<gtk::Label>();
         let (outgoing_model, outgoing_view, outgoing_scroll) = text_list(160);
-        let (backlinks_model, backlinks_view, backlinks_scroll) = text_list(200);
         let links = inspector.segment("Links");
         links
             .section("Outgoing · Ctrl+Enter to follow")
             .add(&outgoing_scroll);
-        links.section("Backlinks").add(&backlinks_scroll);
         let (mentions_model, mentions_view, mentions_scroll) = text_list(140);
         links.section("Unlinked mentions").add(&mentions_scroll);
         let (properties_model, _, properties_scroll) = text_list(200);
@@ -559,10 +586,15 @@ impl Ui {
         center.append(&find_row);
         center.append(&notice_row);
         let search = gtk::SearchEntry::new();
-        search.set_placeholder_text(Some("Search the vault  (Ctrl+Shift+F)"));
+        search.set_placeholder_text(Some("Search notes"));
         search.set_tooltip_text(Some("Words, or tag: path: property:name=value heading:"));
-        search.add_css_class("bar-search");
-        search.set_width_chars(24);
+        // A fixed-width field with the key that reaches it, like the mockup's.
+        search.set_width_chars(16);
+        let search_box = widgets::hbox(6);
+        search_box.add_css_class("header-search");
+        search_box.set_valign(gtk::Align::Center);
+        search_box.append(&search);
+        search_box.append(&widgets::label("Ctrl ⇧ F", "key-hint"));
         let results = widgets::vbox(4);
         let result_scroll = scroll(&results);
         result_scroll.set_max_content_height(240);
@@ -610,20 +642,29 @@ Your Markdown files stay where they are.",
             }
         });
         center.append(&workspace);
+        center.append(&foot);
         let split = gtk::Paned::new(gtk::Orientation::Horizontal);
         split.set_start_child(Some(&nav));
         split.set_end_child(Some(&center));
         split.set_resize_start_child(false);
         split.set_shrink_start_child(false);
-        split.set_position(250);
+        split.set_position(SIDEBAR);
         split.set_hexpand(true);
         body.append(&split);
         // The header: the app and the vault, vault search, and Settings.
         let header =
             nyx_ui::chrome::app_header(&window, "accessories-text-editor-symbolic", "Notes");
+        header.start.append(&head);
         header.center.append(&doc_title.root);
-        header.end.append(&search);
+        header.end.set_spacing(6);
+        search_box.set_margin_end(8);
+        header.end.append(&search_box);
         header.end.append(&split_button);
+        inspector.toggle_button().add_css_class("bar-button");
+        inspector.toggle_button().set_valign(gtk::Align::Center);
+        inspector
+            .toggle_button()
+            .set_tooltip_text(Some("Inspector (Ctrl+Alt+I)"));
         header.end.append(inspector.toggle_button());
         header.end.append(&file_menu);
         header
@@ -694,6 +735,10 @@ Your Markdown files stay where they are.",
             suite_proposals: RefCell::new(std::collections::HashMap::new()),
             pending_jumps: RefCell::new(std::collections::HashMap::new()),
             status,
+            save_state,
+            split_toggle: split_button.clone(),
+            tree_notes: RefCell::new(std::collections::HashMap::new()),
+            backlinks_heading,
             notice,
             notice_row,
             resolve_button: resolve.clone(),
@@ -1100,25 +1145,11 @@ Your Markdown files stay where they are.",
         let compact =
             prefs::get().sidebar_collapsed || (width < 980 && !self.sidebar_expanded.get());
         if self.compact.replace(compact) != compact {
-            self.nav.set_width_request(if compact { 52 } else { 250 });
-            self.split.set_position(if compact { 52 } else { 250 });
-            if let Some(toggle) = self.head.first_child() {
-                toggle.set_halign(if compact {
-                    gtk::Align::Center
-                } else {
-                    gtk::Align::End
-                });
-            }
-            if compact {
-                self.nav.add_css_class("compact");
-            } else {
-                self.nav.remove_css_class("compact");
-            }
+            // Collapsed, the sidebar goes away; its toggle stays in the header.
+            self.nav.set_visible(!compact);
             self.tree.set_visible(!compact);
-            let mut child = self.head.next_sibling();
-            while let Some(widget) = child {
-                child = widget.next_sibling();
-                widget.set_visible(!compact);
+            if !compact {
+                self.split.set_position(SIDEBAR);
             }
         }
     }
@@ -1217,16 +1248,8 @@ Your Markdown files stay where they are.",
         let Some(root) = self.root.borrow().clone() else {
             return;
         };
-        let label = widgets::label(
-            &root
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_uppercase(),
-            "nav-group",
-        );
-        label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        self.tree.append(&label);
+        // The vault's name is in the header; the tree starts with its folders.
+        self.tree_notes.borrow_mut().clear();
         let listing = widgets::vbox(0);
         self.tree.append(&listing);
         self.populate(root, listing, 0);
@@ -1247,6 +1270,7 @@ Your Markdown files stay where they are.",
                     return;
                 }
                 ui.tags.append(&widgets::label("TAGS", "nav-group"));
+                ui.tags.last_child().unwrap().add_css_class("tree-group");
                 for (tag, count) in tags {
                     let row = widgets::hbox(8);
                     let hash = widgets::label("#", "tree-hash");
@@ -1339,7 +1363,9 @@ Your Markdown files stay where they are.",
                                 }
                                 let expander = gtk::Expander::builder().label_widget(&row).build();
                                 expander.add_css_class("tree-expander");
-                                expander.set_margin_start(8 + depth * 8);
+                                // Nested rows sit inside their parent, which is already
+                                // indented: each level adds one step.
+                                expander.set_margin_start(if depth > 0 { INDENT } else { 0 });
                                 let children = widgets::vbox(0);
                                 expander.set_child(Some(&children));
                                 let loaded = Rc::new(Cell::new(false));
@@ -1392,16 +1418,29 @@ Your Markdown files stay where they are.",
                                 }
                                 .unwrap_or_default()
                                 .to_string_lossy();
-                                let button = widgets::labeled_button(
-                                    if entry.symlink {
-                                        "emblem-symbolic-link-symbolic"
-                                    } else {
-                                        "text-x-generic-symbolic"
-                                    },
-                                    &name,
-                                );
+                                let row = widgets::hbox(8);
+                                row.add_css_class("tree-note");
+                                row.append(&gtk::Image::from_icon_name(if entry.symlink {
+                                    "emblem-symbolic-link-symbolic"
+                                } else {
+                                    "text-x-generic-symbolic"
+                                }));
+                                let label = widgets::label(&name, "tree-name");
+                                label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                                label.set_hexpand(true);
+                                row.append(&label);
+                                let button = gtk::Button::new();
+                                button.set_child(Some(&row));
                                 button.add_css_class("nav-item");
-                                button.set_margin_start(depth * 8);
+                                button.add_css_class("tree-item");
+                                // Under its folder's name, past the folder's arrow.
+                                button.set_margin_start(if depth > 0 { INDENT } else { 0 });
+                                if ui.active().is_some_and(|d| d.path == entry.path) {
+                                    button.add_css_class("active");
+                                }
+                                ui.tree_notes
+                                    .borrow_mut()
+                                    .insert(entry.path.clone(), button.downgrade());
                                 button.set_tooltip_text(Some(&entry.path.display().to_string()));
                                 let weak = Rc::downgrade(&ui);
                                 let open_path = entry.path.clone();
@@ -1596,6 +1635,15 @@ Your Markdown files stay where they are.",
     fn add_document(self: &Rc<Self>, loaded: Loaded, draft: Option<Draft>) {
         let editor = Editor::new(&loaded.text);
         self.configure_editor(&editor, &loaded.path);
+        let weak = Rc::downgrade(self);
+        let mine = Rc::downgrade(&editor);
+        editor.buffer.connect_cursor_position_notify(move |_| {
+            if let (Some(ui), Some(editor)) = (weak.upgrade(), mine.upgrade())
+                && ui.active().is_some_and(|d| Rc::ptr_eq(&d.editor, &editor))
+            {
+                ui.update_status();
+            }
+        });
         editor.set_typewriter(prefs::get().typewriter);
         let restored = self.pending_cursors.borrow_mut().remove(&loaded.path);
         if let Some(state) = restored.as_ref() {
@@ -1623,10 +1671,7 @@ Your Markdown files stay where they are.",
             editor.restore_scroll(state.scroll);
         }
         let label = gtk::Label::new(None);
-        label.set_width_chars(12);
-        label.set_max_width_chars(28);
         label.set_xalign(0.0);
-        label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
         let tab = widgets::hbox(6);
         tab.add_css_class("note-tab");
         let icon = gtk::Image::from_icon_name("text-x-generic-symbolic");
@@ -1758,8 +1803,14 @@ Your Markdown files stay where they are.",
             name,
             if doc.dirty.get() { " •" } else { "" }
         ));
-        doc.label
-            .set_width_chars((doc.label.text().chars().count() + 2).clamp(12, 28) as i32);
+        // A tab fits its name; only long names are cut, at 26 characters.
+        let long = doc.label.text().chars().count() > 26;
+        doc.label.set_ellipsize(if long {
+            gtk::pango::EllipsizeMode::Middle
+        } else {
+            gtk::pango::EllipsizeMode::None
+        });
+        doc.label.set_max_width_chars(if long { 26 } else { -1 });
     }
     fn changed(self: &Rc<Self>, doc: Document) {
         if doc.closed.get() || doc.recovery_pending.get() {
@@ -2373,6 +2424,19 @@ Your Markdown files stay where they are.",
         });
         dialog.present();
     }
+    /// The foot's left side: words, reading time and the cursor's line and column.
+    fn update_status(&self) {
+        let Some(doc) = self.active() else { return };
+        let (words, _) = doc.editor.statistics();
+        let cursor = doc.editor.buffer.iter_at_offset(doc.editor.buffer.cursor_position());
+        self.status.set_text(&format!(
+            "{} words\u{2003}{} min read\u{2003}Ln {}, Col {}",
+            thousands(words),
+            words.div_ceil(200).max(1),
+            cursor.line() + 1,
+            cursor.line_offset() + 1
+        ));
+    }
     fn update_active(self: &Rc<Self>) {
         if let Some(doc) = self.active() {
             let folder = self
@@ -2388,20 +2452,25 @@ Your Markdown files stay where they are.",
                 })
                 .unwrap_or_default();
             self.doc_title.set(&folder, &doc.path, doc.dirty.get());
-            let (words, chars) = doc.editor.statistics();
-            self.status.set_text(&format!(
-                "{words} words · {chars} characters · {} min read{}",
-                words.div_ceil(200).max(1),
-                if doc.read_only {
-                    " · Read-only"
-                } else if doc.conflict.get() {
-                    " · Conflict"
-                } else if doc.dirty.get() {
-                    " · Unsaved"
-                } else {
-                    " · Saved"
+            self.update_status();
+            self.save_state.set_text(if doc.read_only {
+                "Read-only"
+            } else if doc.conflict.get() {
+                "Conflict"
+            } else if doc.dirty.get() {
+                "Unsaved"
+            } else {
+                "Saved"
+            });
+            for (path, button) in self.tree_notes.borrow().iter() {
+                if let Some(button) = button.upgrade() {
+                    if *path == doc.path {
+                        button.add_css_class("active");
+                    } else {
+                        button.remove_css_class("active");
+                    }
                 }
-            ));
+            }
             let key = (doc.path.clone(), doc.editor.parsed_revision());
             if self.outline_key.borrow().as_ref() != Some(&key) {
                 *self.outline_key.borrow_mut() = Some(key);
@@ -2409,7 +2478,7 @@ Your Markdown files stay where they are.",
                 replace_strings(
                     &self.outline_model,
                     headings.iter().map(|(text, _, level)| {
-                        format!("{}{text}", "  ".repeat(level.saturating_sub(1) as usize))
+                        format!("{}{text}", "\u{2003}".repeat(level.saturating_sub(1) as usize))
                     }),
                 );
                 *self.outline_offsets.borrow_mut() =
@@ -2451,6 +2520,7 @@ Your Markdown files stay where they are.",
         } else {
             self.doc_title.set(Path::new(""), Path::new(""), false);
             self.status.set_text("Open a note from the vault");
+            self.save_state.set_text("");
             for model in [
                 &self.outline_model,
                 &self.outgoing_model,
@@ -2493,7 +2563,17 @@ Your Markdown files stay where they are.",
             move || {
                 let links = vault::backlinks(&db, &root, &path)?;
                 let mentions = vault::mentions(&db, &root, &path)?;
-                Ok::<_, anyhow::Error>((links, mentions))
+                // Each link's line, for its card.
+                let snippets = links
+                    .iter()
+                    .map(|link| {
+                        std::fs::read_to_string(&link.path)
+                            .ok()
+                            .and_then(|text| link_line(&text, link.offset))
+                            .unwrap_or_default()
+                    })
+                    .collect::<Vec<_>>();
+                Ok::<_, anyhow::Error>((links, mentions, snippets))
             },
             move |result| {
                 let Some(ui) = weak.upgrade() else { return };
@@ -2504,7 +2584,7 @@ Your Markdown files stay where they are.",
                     return;
                 }
                 match result {
-                    Ok((links, mentions)) => {
+                    Ok((links, mentions, snippets)) => {
                         replace_strings(
                             &ui.mentions_model,
                             mentions.iter().map(|hit| {
@@ -2522,17 +2602,23 @@ Your Markdown files stay where they are.",
                         let root = ui.root.borrow().clone().unwrap_or_default();
                         replace_strings(
                             &ui.backlinks_model,
-                            links.iter().map(|link| {
+                            links.iter().zip(&snippets).map(|(link, snippet)| {
                                 format!(
-                                    "{}{}",
+                                    "{}{}\u{1f}{snippet}",
                                     if link.embed { "Embed · " } else { "" },
                                     link.path
                                         .strip_prefix(&root)
                                         .unwrap_or(&link.path)
-                                        .display()
+                                        .with_extension("")
+                                        .file_name()
+                                        .unwrap_or_default()
+                                        .to_string_lossy()
                                 )
                             }),
                         );
+                        if let Some(heading) = &ui.backlinks_heading {
+                            heading.set_text(&format!("BACKLINKS · {}", links.len()));
+                        }
                         if links.is_empty() {
                             replace_strings(&ui.backlinks_model, ["No backlinks".to_owned()]);
                         }
@@ -2768,7 +2854,8 @@ Your Markdown files stay where they are.",
         self.css.load_from_string(&format!(
             "window.notes-window textview.notes-editor {{font-family: \"{family}\", monospace; font-size: {size}pt;}}\n\
              window.notes-window textview.notes-editor.prose, window.notes-window .notes-reader {{font-family: {prose}; font-size: {}pt;}}",
-            size + 1.0
+            // Prose a point under the code size: 12 pt code reads beside 11 pt text.
+            size - 1.0
         ));
         let palette = nyx_theme::palette();
         for doc in self.docs.borrow().iter() {
@@ -2806,6 +2893,80 @@ fn replace_strings(model: &gtk::StringList, items: impl IntoIterator<Item = Stri
     let references = items.iter().map(String::as_str).collect::<Vec<_>>();
     model.splice(0, model.n_items(), &references);
 }
+fn thousands(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// The sidebar's width and the tree's indent per level, in pixels.
+const SIDEBAR: i32 = 236;
+const INDENT: i32 = 16;
+
+/// The line holding a link, without its brackets, for a backlink's card.
+fn link_line(text: &str, offset: usize) -> Option<String> {
+    let offset = offset.min(text.len());
+    let start = text.get(..offset)?.rfind('\n').map_or(0, |n| n + 1);
+    let end = text.get(offset..)?.find('\n').map_or(text.len(), |n| offset + n);
+    let line = text.get(start..end)?.trim().trim_start_matches(['-', '*', '#', ' ']);
+    Some(line.replace("[[", "").replace("]]", ""))
+}
+
+/// A list of cards: each item is `title\u{1f}text`.
+fn card_list(height: i32) -> (gtk::StringList, gtk::ListView, gtk::ScrolledWindow) {
+    let (model, view, scroll) = text_list(height);
+    let factory = gtk::SignalListItemFactory::new();
+    factory.connect_setup(|_, item| {
+        let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
+            return;
+        };
+        let card = widgets::vbox(3);
+        card.add_css_class("link-card");
+        let title = gtk::Label::new(None);
+        title.add_css_class("link-card-title");
+        title.set_xalign(0.0);
+        title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        let text = gtk::Label::new(None);
+        text.add_css_class("link-card-text");
+        text.set_xalign(0.0);
+        text.set_wrap(true);
+        text.set_lines(3);
+        text.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        card.append(&title);
+        card.append(&text);
+        item.set_child(Some(&card));
+    });
+    factory.connect_bind(|_, item| {
+        let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
+            return;
+        };
+        let (Some(value), Some(card)) = (
+            item.item().and_downcast::<gtk::StringObject>(),
+            item.child().and_downcast::<gtk::Box>(),
+        ) else {
+            return;
+        };
+        let value = value.string();
+        let (title, text) = value.split_once('\u{1f}').unwrap_or((&value, ""));
+        if let Some(t) = card.first_child().and_downcast::<gtk::Label>() {
+            t.set_text(title);
+        }
+        if let Some(t) = card.last_child().and_downcast::<gtk::Label>() {
+            t.set_text(text);
+            t.set_visible(!text.is_empty());
+        }
+    });
+    view.set_factory(Some(&factory));
+    view.add_css_class("cards");
+    (model, view, scroll)
+}
+
 fn text_list(height: i32) -> (gtk::StringList, gtk::ListView, gtk::ScrolledWindow) {
     let model = gtk::StringList::new(&[]);
     let selection = gtk::SingleSelection::new(Some(model.clone()));
@@ -3636,10 +3797,11 @@ mod tests {
             .downcast::<gtk::Button>()
             .unwrap()
             .emit_clicked();
-        pump_until(|| !ui.compact.get() && ui.tree.is_visible());
+        // Collapsed, the sidebar is hidden; shown again, it gets its width on the next
+        // layout.
+        pump_until(|| !ui.compact.get() && ui.tree.is_visible() && ui.nav.width() >= 200);
         assert_eq!(ui.window.width(), 800);
         assert!(ui.nav.is_visible());
-        assert!(ui.nav.width() >= 200);
         ui.toggle_sidebar();
         assert!(ui.compact.get());
         ui.open_file(path.clone());
