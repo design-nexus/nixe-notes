@@ -1,5 +1,6 @@
 //! Shared Nyx settings card, rebuilt from current vault/preferences when opened.
 use super::*;
+use nyx_ui::settings_card::{About, Standard};
 type SettingsAction = fn(&Rc<Ui>);
 fn group(body: &gtk::Box, name: &str) -> gtk::Box {
     let section = widgets::vbox(0);
@@ -24,14 +25,34 @@ fn number(
     spin.connect_value_changed(move |s| change(s.value()));
     group.append(&widgets::row(name, description, Some(spin.upcast_ref())));
 }
+/// Every shortcut, for the settings card's Keyboard group.
+const SHORTCUTS: &[(&[&str], &str)] = &[
+    (&["Ctrl", "O"], "Open vault"),
+    (&["Ctrl", "Enter"], "Follow local note link"),
+    (&["F4"], "Cycle source, live and reading"),
+    (&["F2"], "Rename or move note"),
+    (&["F11"], "Focus mode"),
+    (&["Ctrl", "T"], "Toggle task"),
+    (&["Ctrl", "Shift", "D"], "Daily note"),
+    (&["Ctrl", "Alt", "F"], "Fold heading"),
+    (&["Ctrl", "N"], "New note"),
+    (&["Ctrl", "S"], "Save"),
+    (&["Ctrl", "Shift", "S"], "Save a copy"),
+    (&["Ctrl", "F"], "Find in note"),
+    (&["Ctrl", "Shift", "F"], "Search vault"),
+    (&["Ctrl", "B"], "Collapse sidebar"),
+    (&["Ctrl", "Z"], "Undo"),
+    (&["Ctrl", "Shift", "Z"], "Redo"),
+    (&["Ctrl", "W"], "Close note"),
+    (&["Ctrl", "Q"], "Quit"),
+    (&["Ctrl", ","], "Settings"),
+    (&["F1"], "Shortcuts"),
+    (&["Esc"], "Close search or panels"),
+];
+
 impl Ui {
     pub(super) fn settings(self: &Rc<Self>) {
         const GROUPS: &[(&str, &str, &str)] = &[
-            (
-                "Appearance",
-                "applications-graphics-symbolic",
-                "Themes, desktop following, motion",
-            ),
             (
                 "Editor",
                 "format-text-rich-symbolic",
@@ -56,73 +77,6 @@ impl Ui {
         let p = prefs::get();
         let body = widgets::vbox(0);
         body.set_hexpand(true);
-        let appearance = group(&body, "Appearance");
-        let available = nyx_theme::omarchy_available();
-        let (row, follow) = widgets::switch_row(
-            "Follow Omarchy theme",
-            if available {
-                "Follow desktop theme changes automatically"
-            } else {
-                "Use the saved Nyx theme until a desktop palette is available"
-            },
-            p.mode == nyx_theme::ThemeMode::Omarchy,
-            |active| {
-                prefs::update(|p| {
-                    p.mode = if active {
-                        nyx_theme::ThemeMode::Omarchy
-                    } else {
-                        nyx_theme::ThemeMode::Theme
-                    }
-                });
-                nyx_theme::apply();
-            },
-        );
-        appearance.append(&row);
-        let themes = nyx_theme::all();
-        let options = themes
-            .iter()
-            .map(|t| (t.id.clone(), t.name.clone()))
-            .collect::<Vec<_>>();
-        let dropdown = widgets::dropdown(&options, &p.theme);
-        dropdown.set_widget_name("notes-theme");
-        if available {
-            follow
-                .bind_property("active", &dropdown, "sensitive")
-                .invert_boolean()
-                .sync_create()
-                .build();
-        }
-        let follow = follow.downgrade();
-        dropdown.connect_selected_notify(move |d| {
-            if let Some(theme) = themes.get(d.selected() as usize) {
-                if let Some(follow) = follow.upgrade() {
-                    follow.set_active(false);
-                }
-                prefs::update(|p| {
-                    p.theme = theme.id.clone();
-                    p.mode = nyx_theme::ThemeMode::Theme;
-                });
-                nyx_theme::apply();
-            }
-        });
-        appearance.append(&widgets::row(
-            "Theme",
-            "Bundled and custom Nyx themes, including light and dark palettes",
-            Some(dropdown.upcast_ref()),
-        ));
-        let (row, _) = widgets::switch_row(
-            "Reduce motion",
-            "Disable interface transitions",
-            p.reduce_motion,
-            |value| {
-                prefs::update(|p| p.reduce_motion = value);
-                nyx_theme::apply();
-            },
-        );
-        appearance.append(&row);
-        appearance.append(&widgets::accent_row("notes"));
-        appearance.append(&widgets::start_row());
-
         let editor = group(&body, "Editor");
         let weak = Rc::downgrade(self);
         number(
@@ -366,6 +320,22 @@ impl Ui {
             nyx_ui::settings_card::Spec {
                 groups: GROUPS,
                 search_text: None,
+                standard: Some(Standard {
+                    app: "notes",
+                    about: About {
+                        name: "Notes",
+                        icon: "io.github.design_nexus.nyx.Notes",
+                        version: env!("CARGO_PKG_VERSION"),
+                        description: "Markdown notes in a folder on this computer.",
+                        licence: "MIT",
+                        website: "https://github.com/design-nexus/nyx-notes",
+                        issues: "https://github.com/design-nexus/nyx-notes/issues",
+                        credits: &[],
+                    },
+                    shortcuts: SHORTCUTS,
+                    reduce_motion: || prefs::get().reduce_motion,
+                    set_reduce_motion: |on| prefs::update(|p| p.reduce_motion = on),
+                }),
             },
             root.upcast_ref(),
             &body,
