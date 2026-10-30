@@ -3100,6 +3100,18 @@ impl Prompt {
             }
             glib::Propagation::Proceed
         });
+        let keys = gtk::EventControllerKey::new();
+        let weak = dialog.window.downgrade();
+        keys.connect_key_pressed(move |_, key, _, _| {
+            if key == gdk::Key::Escape {
+                if let Some(window) = weak.upgrade() {
+                    window.close();
+                }
+                return glib::Propagation::Stop;
+            }
+            glib::Propagation::Proceed
+        });
+        dialog.window.add_controller(keys);
         let keep = RefCell::new(Some(dialog.clone()));
         dialog.window.connect_destroy(move |_| {
             keep.borrow_mut().take();
